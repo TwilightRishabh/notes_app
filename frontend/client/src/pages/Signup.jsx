@@ -1,6 +1,10 @@
 import { useState } from "react";
+import axios from "axios";
+import { useNavigate, Link } from "react-router-dom";
 
 function Signup() {
+  const navigate = useNavigate();
+
   const [formData, setFormData] = useState({
     fullName: "",
     email: "",
@@ -10,51 +14,86 @@ function Signup() {
   const handleChange = (e) => {
     setFormData({
       ...formData,
-      [e.target.name]: e.target.value,
+      [e.target.name]: e.target.value, // VERY IMPORTANT
     });
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    console.log("Form Submitted:", formData);
+
+    try {
+      const res = await axios.post(
+        "http://localhost:5000/api/users/register",
+        formData
+      );
+
+      // backend sends: id, fullName, email, token
+      const { token, id, fullName, email } = res.data;
+
+      localStorage.setItem("token", token);
+      localStorage.setItem(
+        "user",
+        JSON.stringify({ id, fullName, email })
+      );
+
+      navigate("/notes");
+    } catch (err) {
+      console.error(err.response?.data || err.message);
+      alert(err.response?.data?.message || "Signup failed");
+    }
   };
 
   return (
-    <div style={{ maxWidth: "400px", margin: "auto" }}>
-      <h2>Signup</h2>
-      <form onSubmit={handleSubmit}>
-        <input
-          type="text"
-          name="fullName"
-          placeholder="Enter your full name"
-          value={formData.fullName}
-          onChange={handleChange}
-          required
-        />
-        <br /><br />
+    <div className="min-h-screen flex items-center justify-center bg-gray-100">
+      <div className="bg-white p-8 rounded-lg shadow-md w-full max-w-md">
+        <h2 className="text-2xl font-bold text-center mb-6">Signup</h2>
 
-        <input
-          type="email"
-          name="email"
-          placeholder="Enter your email"
-          value={formData.email}
-          onChange={handleChange}
-          required
-        />
-        <br /><br />
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <input
+            type="text"
+            name="fullName"
+            placeholder="Full Name"
+            value={formData.fullName}
+            onChange={handleChange}
+            className="w-full px-4 py-2 border rounded"
+            required
+          />
 
-        <input
-          type="password"
-          name="password"
-          placeholder="Enter your password"
-          value={formData.password}
-          onChange={handleChange}
-          required
-        />
-        <br /><br />
+          <input
+            type="email"
+            name="email"
+            placeholder="Email"
+            value={formData.email}
+            onChange={handleChange}
+            className="w-full px-4 py-2 border rounded"
+            required
+          />
 
-        <button type="submit">Signup</button>
-      </form>
+          <input
+            type="password"
+            name="password"
+            placeholder="Password"
+            value={formData.password}
+            onChange={handleChange}
+            className="w-full px-4 py-2 border rounded"
+            required
+          />
+
+          <button
+            type="submit"
+            className="w-full bg-green-600 text-white py-2 rounded hover:bg-green-700"
+          >
+            Signup
+          </button>
+        </form>
+
+        <p className="mt-4 text-center text-sm">
+          Already have an account?{" "}
+          <Link to="/login" className="text-blue-600">
+            Login
+          </Link>
+        </p>
+      </div>
     </div>
   );
 }
