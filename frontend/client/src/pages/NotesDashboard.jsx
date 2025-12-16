@@ -7,41 +7,34 @@ function NotesDashboard() {
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
 
-  const [isEditing, setIsEditing] = useState(false);
-  const [editId, setEditId] = useState(null);
-
-  const [error, setError] = useState(""); // 🔴 validation message
-
-
+  const [error, setError] = useState("");
   const [shakeError, setShakeError] = useState(false);
 
-  
-
+  const [selectedNote, setSelectedNote] = useState(null);
+  const [modalTitle, setModalTitle] = useState("");
+  const [modalContent, setModalContent] = useState("");
 
   const navigate = useNavigate();
 
-  // -----------------------------
-  // Fetch Notes
-  // -----------------------------
+  // Lock background scroll
+  useEffect(() => {
+    document.body.style.overflow = selectedNote ? "hidden" : "auto";
+    return () => (document.body.style.overflow = "auto");
+  }, [selectedNote]);
+
+  // Fetch notes
   const fetchNotes = async () => {
     try {
       const token = localStorage.getItem("token");
-      if (!token) {
-        navigate("/login");
-        return;
-      }
+      if (!token) return navigate("/login");
 
       const res = await axios.get("http://localhost:5000/api/notes", {
         headers: { Authorization: `Bearer ${token}` },
       });
 
       setNotes(res.data);
-    } catch (error) {
-      console.log("Fetch notes error:", error);
-      if (error.response?.status === 401) {
-        localStorage.removeItem("token");
-        navigate("/login");
-      }
+    } catch {
+      navigate("/login");
     }
   };
 
@@ -49,24 +42,17 @@ function NotesDashboard() {
     fetchNotes();
   }, []);
 
-  // -----------------------------
-  // Add New Note
-  // -----------------------------
+  // Add note
   const handleAdd = async () => {
-    if (!title.trim() || !content.trim()) {
-  setError("Please enter both title and content.");
-
-  // force re-trigger animation
-  setShakeError(false);
-  requestAnimationFrame(() => setShakeError(true));
-  return;
-}
-
-    setError("");
+    if (!title.trim() && !content.trim()) {
+      setError("Enter title or content");
+      setShakeError(false);
+      requestAnimationFrame(() => setShakeError(true));
+      return;
+    }
 
     try {
       const token = localStorage.getItem("token");
-
       const res = await axios.post(
         "http://localhost:5000/api/notes",
         { title, content },
@@ -76,81 +62,78 @@ function NotesDashboard() {
       setNotes((prev) => [res.data, ...prev]);
       setTitle("");
       setContent("");
-    } catch (error) {
-      console.log("Add note error:", error);
-      setError(error.response?.data?.message || "Failed to add note");
+      setError("");
+    } catch {
+      setError("Failed to add note");
     }
   };
 
-  // -----------------------------
-  // Start Editing
-  // -----------------------------
-  const startEdit = (note) => {
-    setIsEditing(true);
-    setEditId(note._id);
-    setTitle(note.title);
-    setContent(note.content);
-    setError("");
+  // Open note
+  const openNote = (note) => {
+    setSelectedNote(note);
+    setModalTitle(note.title || "");
+    setModalContent(note.content || "");
   };
 
-  // -----------------------------
-  // Update Note
-  // -----------------------------
-  const handleUpdate = async () => {
-    if (!title.trim() || !content.trim()) {
-      setError("Please enter both title and content.");
-      return;
-    }
+  // Close modal → auto save or delete
+  const closeModal = async () => {
+    if (!selectedNote) return;
 
-    setError("");
+    const trimmedTitle = modalTitle.trim();
+    const trimmedContent = modalContent.trim();
+    const token = localStorage.getItem("token");
 
     try {
-      const token = localStorage.getItem("token");
+      if (!trimmedTitle && !trimmedContent) {
+        // DELETE
+        await axios.delete(
+          `http://localhost:5000/api/notes/${selectedNote._id}`,
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
 
-      const res = await axios.put(
-        `http://localhost:5000/api/notes/${editId}`,
-        { title, content },
+        setNotes((prev) =>
+          prev.filter((n) => n._id !== selectedNote._id)
+        );
+      } else {
+        // UPDATE
+        const res = await axios.put(
+          `http://localhost:5000/api/notes/${selectedNote._id}`,
+          { title: trimmedTitle, content: trimmedContent },
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
+
+        setNotes((prev) =>
+          prev.map((n) =>
+            n._id === selectedNote._id ? res.data : n
+          )
+        );
+      }
+    } catch (err) {
+      console.error("Auto save failed", err);
+    }
+
+    setSelectedNote(null);
+  };
+
+  // Instant delete (icon)
+  const instantDelete = async (e) => {
+    e.stopPropagation();
+    const token = localStorage.getItem("token");
+
+    try {
+      await axios.delete(
+        `http://localhost:5000/api/notes/${selectedNote._id}`,
         { headers: { Authorization: `Bearer ${token}` } }
       );
 
       setNotes((prev) =>
-        prev.map((note) =>
-          note._id === editId ? res.data : note
-        )
+        prev.filter((n) => n._id !== selectedNote._id)
       );
-
-      setIsEditing(false);
-      setEditId(null);
-      setTitle("");
-      setContent("");
-    } catch (error) {
-      console.log("Update note error:", error);
-      setError(error.response?.data?.message || "Failed to update note");
+    } catch (err) {
+      console.error("Delete failed", err);
     }
-  };
 
-  // -----------------------------
-  // Delete Note
-  // -----------------------------
-  const handleDelete = async (noteId) => {
-    const confirmDelete = window.confirm(
-      "Are you sure you want to delete this note?"
-    );
-    if (!confirmDelete) return;
-
-    const backup = notes;
-    setNotes((prev) => prev.filter((n) => n._id !== noteId));
-
-    try {
-      const token = localStorage.getItem("token");
-      await axios.delete(`http://localhost:5000/api/notes/${noteId}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-    } catch (error) {
-      console.log("Delete note error:", error);
-      setNotes(backup);
-      setError(error.response?.data?.message || "Failed to delete note");
-    }
+    setSelectedNote(null);
   };
 
   return (
@@ -158,98 +141,105 @@ function NotesDashboard() {
       <div className="max-w-5xl mx-auto">
         <h1 className="text-3xl font-bold mb-6">Notes Dashboard</h1>
 
-        {/* Add / Edit Card */}
+        {/* Add Note */}
         <div className="bg-white p-5 rounded-xl shadow-md mb-8">
           <input
-            type="text"
-            placeholder="Note title"
+            placeholder="Title"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
-            className="w-full px-3 py-2 border rounded-md mb-3 focus:outline-none focus:ring-2 focus:ring-green-500"
+            className="w-full px-3 py-2 border rounded mb-3"
           />
-
           <textarea
             placeholder="Take a note..."
             value={content}
             onChange={(e) => setContent(e.target.value)}
             rows={4}
-            className="w-full px-3 py-2 border rounded-md mb-3 resize-none focus:outline-none focus:ring-2 focus:ring-green-500"
+            className="w-full px-3 py-2 border rounded mb-3 resize-none"
           />
 
-          
-        <div className="h-6 mb-3">
-          {error && (
-            <p
-              style={{
-                display: "inline-block",
-                animation: shakeError ? "shakeX 0.6s" : "none",
-              }}
-            className="text-red-600 text-sm mb-3"
-            >
-            ⚠️ {error}
-            </p>
+          <div className="h-6 mb-2">
+            {error && (
+              <p
+                className="text-red-600 text-sm inline-block"
+                style={{
+                  animation: shakeError ? "shakeX 0.6s" : "none",
+                }}
+              >
+                ⚠ {error}
+              </p>
             )}
-        </div>
+          </div>
 
-          {isEditing ? (
-            <button
-              onClick={handleUpdate}
-              className="bg-blue-600 text-white px-5 py-2 rounded-md hover:bg-blue-700"
-            >
-              Update Note
-            </button>
-          ) : (
-            <button
-              onClick={handleAdd}
-              className="bg-green-600 text-white px-5 py-2 rounded-md hover:bg-green-700"
-            >
-              Add Note
-            </button>
-          )}
+          <button
+            onClick={handleAdd}
+            className="bg-green-600 text-white px-5 py-2 rounded hover:bg-green-700"
+          >
+            Add Note
+          </button>
         </div>
 
         {/* Notes Grid */}
-        {notes.length === 0 ? (
-          <p className="text-gray-500">No notes yet...</p>
-        ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-            {notes.map((note) => (
-              <div
-                key={note._id}
-                className="bg-white p-4 rounded-xl shadow-sm hover:shadow-md transition"
-              >
-                <h3 className="font-semibold text-lg mb-2">
-                  {note.title}
-                </h3>
-
-                <p className="text-gray-600 text-sm line-clamp-4">
-                  {note.content}
-                </p>
-
-                <p className="text-xs text-gray-400 mt-3">
-                  {new Date(note.createdAt).toLocaleString()}
-                </p>
-
-                <div className="flex gap-3 mt-4">
-                  <button
-                    onClick={() => startEdit(note)}
-                    className="text-blue-600 hover:underline text-sm"
-                  >
-                    Edit
-                  </button>
-
-                  <button
-                    onClick={() => handleDelete(note._id)}
-                    className="text-red-600 hover:underline text-sm"
-                  >
-                    Delete
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+          {notes.map((note) => (
+            <div
+              key={note._id}
+              onMouseDown={() => openNote(note)}
+              className="bg-white p-4 rounded-xl shadow cursor-pointer hover:shadow-md"
+            >
+              <h3 className="font-semibold mb-2">{note.title}</h3>
+              <p className="text-sm text-gray-600 line-clamp-4">
+                {note.content}
+              </p>
+            </div>
+          ))}
+        </div>
       </div>
+
+      {/* Modal */}
+      {selectedNote && (
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          onMouseDown={closeModal}
+        >
+          <div
+            onMouseDown={(e) => e.stopPropagation()}
+            className="bg-white w-[90%] max-w-2xl max-h-[80vh] rounded-xl p-6 overflow-y-auto"
+          >
+            {/* Header */}
+            <div className="flex items-center justify-between mb-4">
+              <input
+                className="w-full text-2xl font-bold outline-none"
+                value={modalTitle}
+                onChange={(e) => setModalTitle(e.target.value)}
+                placeholder="Title"
+              />
+
+              
+              <button
+                onMouseDown={instantDelete}
+                className="cursor-pointer ml-4 text-white-600 invert-100 hover:invert-80 transition-all duration-300 text-2xl"
+                title="Delete note"
+              >
+                ❎
+              </button>
+
+              
+              
+            </div>
+
+            <textarea
+              className="w-full min-h-[200px] outline-none resize-none"
+              value={modalContent}
+              onChange={(e) => setModalContent(e.target.value)}
+              placeholder="Take a note..."
+            />
+
+            <p className="text-xs text-gray-400 mt-4">
+              Click outside to save • Clear both to delete
+            </p>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

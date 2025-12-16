@@ -1,29 +1,24 @@
 import mongoose from "mongoose";
-import User from "./User.js";
 
-
-const notesSchema = new mongoose.Schema({
+const notesSchema = new mongoose.Schema(
+  {
     title: {
-        type: String,
-        required: [true, "Title is required"],
-        trim:true
+      type: String,
+      trim: true,
+      default: "",
     },
     content: {
-        type: String,
-        required: [true, "content is required"],
-        
+      type: String,
+      default: "",
     },
     user: {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: "User",
-        required:true,
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required: true,
     },
-
-
-},{timestamps:true})
-
-
+  },
+  { timestamps: true }
+);
 
 const Note = mongoose.model("Note", notesSchema);
-
 export default Note;
