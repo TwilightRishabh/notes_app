@@ -219,9 +219,9 @@ function NotesDashboard() {
 
               <button
                 onMouseDown={instantDelete}
-                className="text-xl hover:scale-110 transition"
+                className="text-xl hover:scale-110 transition text-red-600"
               >
-                ❌
+                Delete
               </button>
             </div>
 
