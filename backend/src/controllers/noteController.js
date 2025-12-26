@@ -51,35 +51,31 @@ export const getNotes = async (req, res) => {
 // =======================
 export const updateNote = async (req, res) => {
   try {
-    const { title = "", content = "" } = req.body;
     const userId = req.user?._id;
-
     if (!userId) {
       return res.status(401).json({ message: "Not authorized" });
     }
 
     const note = await Note.findById(req.params.id);
-
-    if (!note) {
-      return res.status(404).json({ message: "Note not found" });
-    }
+    if (!note) return res.status(404).json({ message: "Note not found" });
 
     if (note.user.toString() !== userId.toString()) {
       return res.status(401).json({ message: "Not authorized" });
     }
 
-    const trimmedTitle = title.trim();
-    const trimmedContent = content.trim();
+    // Get fields but DO NOT force-trim when pinning only
+    const { title, content, isPinned } = req.body;
 
-    // ✅ delete only if BOTH empty
-    if (!trimmedTitle && !trimmedContent) {
-      await Note.findByIdAndDelete(note._id);
+    // Apply only provided values
+    if (title !== undefined) note.title = title.trim();
+    if (content !== undefined) note.content = content.trim();
+    if (isPinned !== undefined) note.isPinned = isPinned;
+
+    // If both empty → delete
+    if (!note.title && !note.content) {
+      await note.deleteOne();
       return res.json({ deleted: true, id: note._id });
     }
-
-    // ✅ partial updates allowed
-    note.title = trimmedTitle;
-    note.content = trimmedContent;
 
     const updated = await note.save();
     res.json(updated);
