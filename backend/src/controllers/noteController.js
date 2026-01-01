@@ -63,19 +63,22 @@ export const updateNote = async (req, res) => {
       return res.status(401).json({ message: "Not authorized" });
     }
 
-    // Get fields but DO NOT force-trim when pinning only
-    const { title, content, isPinned } = req.body;
+    // Destructure fields that may come from frontend
+    const { title, content, isPinned, isArchived } = req.body;
 
-    // Apply only provided values
+    // Update ONLY provided fields
     if (title !== undefined) note.title = title.trim();
     if (content !== undefined) note.content = content.trim();
     if (isPinned !== undefined) note.isPinned = isPinned;
+    if (isArchived !== undefined) note.isArchived = isArchived;
 
-    // If both empty → delete
+    // If both title + content empty → delete permanently
     if (!note.title && !note.content) {
       await note.deleteOne();
       return res.json({ deleted: true, id: note._id });
     }
+
+
 
     const updated = await note.save();
     res.json(updated);
@@ -87,8 +90,9 @@ export const updateNote = async (req, res) => {
 };
 
 
+
 // =======================
-// Delete Note (Manual)
+// Delete Note (Soft delete + Permanent delete)
 // =======================
 export const deleteNote = async (req, res) => {
   try {
@@ -104,10 +108,23 @@ export const deleteNote = async (req, res) => {
       return res.status(401).json({ message: "Not authorized" });
     }
 
+    // If note is NOT already in trash → move to trash
+    if (!note.isDeleted) {
+      note.isDeleted = true;
+      note.isPinned = false;
+      note.isArchived = false;
+
+      const trashed = await note.save();
+      return res.json({ movedToTrash: true, note: trashed });
+    }
+
+    // If already in trash → delete permanently
     await note.deleteOne();
-    res.json({ message: "Note deleted" });
+    return res.json({ deletedForever: true });
+
   } catch (error) {
     console.error("Delete note error:", error);
     res.status(500).json({ message: "Server error" });
   }
 };
+

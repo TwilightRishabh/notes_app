@@ -92,7 +92,21 @@ export default function NavBar() {
                 )}`}
               >
                 Notes
-              </Link>
+                </Link>
+                
+                <Link to="/archived" className={`relative transition after:absolute after:left-0 after:-bottom-1 after:h-[2px] after:bg-green-500 after:transition-all ${isActive(
+                  "/archived"
+                )}`}>
+                  Archived
+                </Link>
+
+                <Link to="/trash" className={`relative transition after:absolute after:left-0 after:-bottom-1 after:h-[2px] after:bg-green-500 after:transition-all ${isActive(
+                  "/trash"
+                )}`}>
+                  Trash
+                </Link>
+
+
 
               <button
                 onClick={handleLogout}
