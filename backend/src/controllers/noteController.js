@@ -38,23 +38,34 @@ export const getNotes = async (req, res) => {
     const userId = req.user && req.user._id;
     if (!userId) return res.status(401).json({ message: "Not authorized" });
 
-    const notes = await Note.find({ user: userId }).sort({ createdAt: -1 });
+    // query flags for Trash page
+    const onlyDeleted = req.query.onlyDeleted === "true";
+
+    const query = { user: userId };
+
+    if (onlyDeleted) {
+      query.isDeleted = true;           // only trash
+    } else {
+      query.isDeleted = { $ne: true };  // exclude trash
+    }
+
+    const notes = await Note.find(query).sort({ createdAt: -1 });
     res.json(notes);
+
   } catch (error) {
     console.error("Get notes error:", error);
     res.status(500).json({ message: "Server error" });
   }
 };
 
+
 // =======================
-// Update OR Delete Note
+// Update Note (edit / restore)
 // =======================
 export const updateNote = async (req, res) => {
   try {
     const userId = req.user?._id;
-    if (!userId) {
-      return res.status(401).json({ message: "Not authorized" });
-    }
+    if (!userId) return res.status(401).json({ message: "Not authorized" });
 
     const note = await Note.findById(req.params.id);
     if (!note) return res.status(404).json({ message: "Note not found" });
@@ -63,22 +74,20 @@ export const updateNote = async (req, res) => {
       return res.status(401).json({ message: "Not authorized" });
     }
 
-    // Destructure fields that may come from frontend
-    const { title, content, isPinned, isArchived } = req.body;
+    // include isDeleted in updates ✅
+    const { title, content, isPinned, isArchived, isDeleted } = req.body;
 
-    // Update ONLY provided fields
     if (title !== undefined) note.title = title.trim();
     if (content !== undefined) note.content = content.trim();
     if (isPinned !== undefined) note.isPinned = isPinned;
     if (isArchived !== undefined) note.isArchived = isArchived;
+    if (isDeleted !== undefined) note.isDeleted = isDeleted;
 
-    // If both title + content empty → delete permanently
+    // if both fields empty → permanent delete
     if (!note.title && !note.content) {
       await note.deleteOne();
       return res.json({ deleted: true, id: note._id });
     }
-
-
 
     const updated = await note.save();
     res.json(updated);
@@ -90,41 +99,36 @@ export const updateNote = async (req, res) => {
 };
 
 
-
 // =======================
-// Delete Note (Soft delete + Permanent delete)
+// Delete Note (Trash system)
 // =======================
 export const deleteNote = async (req, res) => {
   try {
-    const noteId = req.params.id;
     const userId = req.user && req.user._id;
+    const note = await Note.findById(req.params.id);
 
-    if (!userId) return res.status(401).json({ message: "Not authorized" });
-
-    const note = await Note.findById(noteId);
     if (!note) return res.status(404).json({ message: "Note not found" });
-
-    if (note.user.toString() !== userId.toString()) {
+    if (note.user.toString() !== userId.toString())
       return res.status(401).json({ message: "Not authorized" });
-    }
 
-    // If note is NOT already in trash → move to trash
+    // If not yet deleted → move to trash
     if (!note.isDeleted) {
       note.isDeleted = true;
       note.isPinned = false;
       note.isArchived = false;
+      note.deletedAt = Date.now();   // ⭐ IMPORTANT
 
       const trashed = await note.save();
       return res.json({ movedToTrash: true, note: trashed });
     }
 
-    // If already in trash → delete permanently
+
+    // If already in trash → permanent delete
     await note.deleteOne();
-    return res.json({ deletedForever: true });
+    res.json({ deletedForever: true });
 
   } catch (error) {
     console.error("Delete note error:", error);
     res.status(500).json({ message: "Server error" });
   }
 };
-

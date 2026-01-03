@@ -1,10 +1,12 @@
 import { Routes, Route, Navigate } from "react-router-dom";
 
-import NavBar from "../components/NavBar";
-import Home from "../pages/Home";
-import Login from "../pages/Login";
-import Signup from "../pages/Signup";
-import NotesDashboard from "../pages/NotesDashboard";
+import NavBar from "../components/NavBar.jsx";
+import Home from "../pages/Home.jsx";
+import Login from "../pages/Login.jsx";
+import Signup from "../pages/Signup.jsx";
+import NotesDashboard from "../pages/NotesDashboard.jsx";
+import ArchivedNotes from "../pages/ArchivedNotes.jsx";
+import TrashNotes from "../pages/TrashNotes.jsx";
 
 // Protected Route wrapper
 function ProtectedRoute({ children }) {
@@ -30,6 +32,12 @@ export default function AppRouter() {
             </ProtectedRoute>
           }
         />
+
+        <Route path="/archived" element={<ArchivedNotes />} />
+        <Route path="/trash" element={<TrashNotes />} />
+
+        
+
       </Routes>
     </>
   );
