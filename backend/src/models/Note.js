@@ -31,7 +31,12 @@ const notesSchema = new mongoose.Schema(
     deletedAt: {
       type: Date,
       default: null,
-    }
+    },
+    color: {
+      type: String,
+      default: "#FFFFFF"   // white note by default
+    },
+
 
 
 

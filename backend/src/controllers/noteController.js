@@ -5,7 +5,7 @@ import Note from "../models/Note.js";
 // =======================
 export const createNote = async (req, res) => {
   try {
-    const { title = "", content = "" } = req.body;
+    const { title = "", content = "", color = "#FFFFFF" } = req.body;
 
     const trimmedTitle = title.trim();
     const trimmedContent = content.trim();
@@ -19,6 +19,7 @@ export const createNote = async (req, res) => {
     const note = await Note.create({
       title: trimmedTitle,
       content: trimmedContent,
+      color,                 // ⭐ store color on create
       user: req.user._id,
     });
 
@@ -38,13 +39,12 @@ export const getNotes = async (req, res) => {
     const userId = req.user && req.user._id;
     if (!userId) return res.status(401).json({ message: "Not authorized" });
 
-    // query flags for Trash page
     const onlyDeleted = req.query.onlyDeleted === "true";
 
     const query = { user: userId };
 
     if (onlyDeleted) {
-      query.isDeleted = true;           // only trash
+      query.isDeleted = true;           // fetch only trash
     } else {
       query.isDeleted = { $ne: true };  // exclude trash
     }
@@ -74,14 +74,15 @@ export const updateNote = async (req, res) => {
       return res.status(401).json({ message: "Not authorized" });
     }
 
-    // include isDeleted in updates ✅
-    const { title, content, isPinned, isArchived, isDeleted } = req.body;
+    // ⭐ include color (and keep existing flags)
+    const { title, content, isPinned, isArchived, isDeleted, color } = req.body;
 
     if (title !== undefined) note.title = title.trim();
     if (content !== undefined) note.content = content.trim();
     if (isPinned !== undefined) note.isPinned = isPinned;
     if (isArchived !== undefined) note.isArchived = isArchived;
     if (isDeleted !== undefined) note.isDeleted = isDeleted;
+    if (color !== undefined) note.color = color;   // ⭐ save color
 
     // if both fields empty → permanent delete
     if (!note.title && !note.content) {
@@ -116,12 +117,11 @@ export const deleteNote = async (req, res) => {
       note.isDeleted = true;
       note.isPinned = false;
       note.isArchived = false;
-      note.deletedAt = Date.now();   // ⭐ IMPORTANT
+      note.deletedAt = Date.now();   // ⭐ needed for auto delete 30 days
 
       const trashed = await note.save();
       return res.json({ movedToTrash: true, note: trashed });
     }
-
 
     // If already in trash → permanent delete
     await note.deleteOne();

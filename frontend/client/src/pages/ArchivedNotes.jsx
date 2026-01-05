@@ -1,9 +1,10 @@
+// ⭐ ArchivedNotes — color preserved + perfectly-centered icon
+
 import { useEffect, useMemo, useState } from "react";
 import axios from "axios";
 import { useNavigate } from "react-router-dom";
 
 function ArchivedNotes() {
-
   const [notes, setNotes] = useState([]);
   const [search, setSearch] = useState("");
 
@@ -17,12 +18,10 @@ function ArchivedNotes() {
 
   const navigate = useNavigate();
 
-  /* Lock scroll while modal open */
   useEffect(() => {
     document.body.style.overflow = selectedNote ? "hidden" : "auto";
   }, [selectedNote]);
 
-  /* Fetch notes */
   const fetchNotes = async () => {
     try {
       const token = localStorage.getItem("token");
@@ -44,7 +43,6 @@ function ArchivedNotes() {
     fetchNotes();
   }, []);
 
-  /* ESC closes modal */
   useEffect(() => {
     const key = (e) => {
       if (e.key === "Escape" && selectedNote) handleClose(true);
@@ -53,11 +51,9 @@ function ArchivedNotes() {
     return () => window.removeEventListener("keydown", key);
   }, [selectedNote, modalTitle, modalContent]);
 
-  /* ---------- 🔍 SEARCH HIGHLIGHT ---------- */
   const highlight = (text = "", q) => {
     if (!q.trim()) return text;
     const regex = new RegExp(`(${q})`, "gi");
-
     return text.split(regex).map((part, i) =>
       part.toLowerCase() === q.toLowerCase() ? (
         <span key={i} className="bg-yellow-200 px-1 rounded">
@@ -69,59 +65,99 @@ function ArchivedNotes() {
     );
   };
 
-  /* ---------- GROUP: ARCHIVED (Pinned + Others) ---------- */
-  const { pinnedArchived, otherArchived } = useMemo(() => {
+  const { pinnedArchived, otherArchived, totalArchived } = useMemo(() => {
     const q = search.trim().toLowerCase();
-    const archived = notes.filter(n => n.isArchived);
+    const archived = notes.filter((n) => n.isArchived);
 
     const filtered = q
       ? archived.filter(
-          n =>
+          (n) =>
             n.title?.toLowerCase().includes(q) ||
             n.content?.toLowerCase().includes(q)
         )
       : archived;
 
     return {
-      pinnedArchived: filtered.filter(n => n.isPinned),
-      otherArchived: filtered.filter(n => !n.isPinned),
+      pinnedArchived: filtered.filter((n) => n.isPinned),
+      otherArchived: filtered.filter((n) => !n.isPinned),
+      totalArchived: archived.length,
     };
-
   }, [notes, search]);
+
+  /* ---------- NO SEARCH MATCH (⭐ arrow centered inside box) ---------- */
+  const NoSearchMatch = () => (
+    <div className="flex flex-col items-center justify-center h-[40vh] text-gray-600">
+      <svg width="72" height="72" viewBox="0 0 24 24" className="mb-3">
+        {/* Box */}
+        <rect
+          x="3"
+          y="7"
+          width="18"
+          height="13"
+          rx="2"
+          ry="2"
+          fill="none"
+          stroke="#6b7280"
+          strokeWidth="2"
+        />
+        {/* Lid line */}
+        <path
+          d="M3 10h18"
+          fill="none"
+          stroke="#6b7280"
+          strokeWidth="2"
+        />
+        {/* ⭐ centered arrow */}
+        <path
+          d="M12 11v4
+             m-3-2 3 3 3-3"
+          fill="none"
+          stroke="#6b7280"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      </svg>
+      <p className="font-medium">No matching notes</p>
+    </div>
+  );
 
   /* ---------- OPEN NOTE ---------- */
   const openNote = (note) => {
-    setSelectedNote(note);
+    const c = note.color || "#FFFFFF";
+    setSelectedNote({ ...note, color: c, colorBeforeEdit: c });
     setModalTitle(note.title || "");
     setModalContent(note.content || "");
     setMenuOpen(false);
   };
 
-  /* ---------- CLOSE WITH ANIMATION ---------- */
   const handleClose = async (clickedOutside = false) => {
     if (isClosing) return;
     setIsClosing(true);
-
     await closeModal(clickedOutside);
-
     setTimeout(() => {
       setIsClosing(false);
       setMenuOpen(false);
     }, 180);
   };
 
-  /* ---------- SAVE NOTE ---------- */
   const closeModal = async (clickedOutside) => {
     if (!selectedNote) return;
 
+    const token = localStorage.getItem("token");
     const title = modalTitle.trim();
     const content = modalContent.trim();
-    const token = localStorage.getItem("token");
+    const color = selectedNote.color || "#FFFFFF";
+
+    const prevTitle = (selectedNote.title || "").trim();
+    const prevContent = (selectedNote.content || "").trim();
+    const prevColor = selectedNote.colorBeforeEdit || selectedNote.color;
 
     if (
       clickedOutside &&
-      title === (selectedNote.title || "").trim() &&
-      content === (selectedNote.content || "").trim()
+      title === prevTitle &&
+      content === prevContent &&
+      color === prevColor
     ) {
       return setSelectedNote(null);
     }
@@ -131,27 +167,22 @@ function ArchivedNotes() {
         `http://localhost:5000/api/notes/${selectedNote._id}`,
         { headers: { Authorization: `Bearer ${token}` } }
       );
-      setNotes(prev => prev.filter(n => n._id !== selectedNote._id));
+      setNotes((p) => p.filter((n) => n._id !== selectedNote._id));
       return setSelectedNote(null);
     }
 
     const res = await axios.put(
       `http://localhost:5000/api/notes/${selectedNote._id}`,
-      { title, content },
+      { title, content, color },
       { headers: { Authorization: `Bearer ${token}` } }
     );
 
-    setNotes(prev =>
-      prev.map(n => (n._id === res.data._id ? res.data : n))
-    );
-
+    setNotes((p) => p.map((n) => (n._id === res.data._id ? res.data : n)));
     setSelectedNote(null);
   };
 
-  /* ---------- PIN / UNPIN ---------- */
   const togglePin = async (note) => {
     if (!note?._id) return;
-
     const token = localStorage.getItem("token");
 
     const res = await axios.put(
@@ -160,21 +191,19 @@ function ArchivedNotes() {
         title: note.title ?? "",
         content: note.content ?? "",
         isPinned: !Boolean(note.isPinned),
-        isArchived: true
+        isArchived: true,
+        color: note.color ?? "#FFFFFF",
       },
       { headers: { Authorization: `Bearer ${token}` } }
     );
 
-    setNotes(prev =>
-      prev.map(n => (n._id === res.data._id ? res.data : n))
-    );
+    setNotes((p) => p.map((n) => (n._id === res.data._id ? res.data : n)));
 
     if (selectedNote && selectedNote._id === res.data._id) {
       setSelectedNote(res.data);
     }
   };
 
-  /* ---------- UNARCHIVE ---------- */
   const unarchiveNote = async () => {
     if (!selectedNote?._id) return;
 
@@ -184,20 +213,17 @@ function ArchivedNotes() {
       `http://localhost:5000/api/notes/${selectedNote._id}`,
       {
         ...selectedNote,
-        isArchived: false
+        isArchived: false,
+        color: selectedNote.color ?? "#FFFFFF",
       },
       { headers: { Authorization: `Bearer ${token}` } }
     );
 
-    setNotes(prev =>
-      prev.map(n => (n._id === res.data._id ? res.data : n))
-    );
-
+    setNotes((p) => p.map((n) => (n._id === res.data._id ? res.data : n)));
     setSelectedNote(null);
     setMenuOpen(false);
   };
 
-  /* ---------- DELETE ---------- */
   const deleteNote = async () => {
     if (!selectedNote?._id) return;
 
@@ -208,12 +234,11 @@ function ArchivedNotes() {
       { headers: { Authorization: `Bearer ${token}` } }
     );
 
-    setNotes(prev => prev.filter(n => n._id !== selectedNote._id));
+    setNotes((p) => p.filter((n) => n._id !== selectedNote._id));
     setSelectedNote(null);
     setMenuOpen(false);
   };
 
-  /* ---------- PIN ICON ---------- */
   const PinIcon = ({ active }) => (
     <svg className="cursor-pointer" width="20" height="20" viewBox="0 0 24 24">
       <path
@@ -225,28 +250,17 @@ function ArchivedNotes() {
     </svg>
   );
 
-  /* ---------- EMPTY STATE ---------- */
-  const EmptyArchived = () => (
-    <div className="flex flex-col items-center justify-center h-[55vh] text-gray-600">
-      <svg width="60" height="60" viewBox="0 0 24 24" className="mb-2">
-        <path fill="#6b7280" d="M6 4h12l2 4H4l2-4zm-2 6h16v10H4V10z"/>
-      </svg>
-      <p className="font-medium">No archived notes</p>
-      <p className="text-sm opacity-70">Archived notes appear here</p>
-    </div>
-  );
-
-  if (isLoading)
+  if (isLoading) {
     return (
       <div className="min-h-screen bg-emerald-50 flex items-center justify-center">
         <p className="text-emerald-700">Loading…</p>
       </div>
     );
+  }
 
   return (
     <div className="min-h-screen bg-emerald-50 px-6 py-8">
       <div className="max-w-6xl mx-auto">
-
         <input
           value={search}
           onChange={(e) => setSearch(e.target.value)}
@@ -254,19 +268,22 @@ function ArchivedNotes() {
           className="w-full mb-8 px-4 py-3 rounded-lg bg-white border border-emerald-200 focus:ring-2 focus:ring-emerald-300"
         />
 
-        {pinnedArchived.length === 0 && otherArchived.length === 0 && <EmptyArchived />}
+        {totalArchived > 0 &&
+          pinnedArchived.length === 0 &&
+          otherArchived.length === 0 &&
+          <NoSearchMatch />}
 
-        {/* ---------- PINNED ARCHIVED ---------- */}
+        {/* PINNED */}
         {pinnedArchived.length > 0 && (
           <>
             <p className="text-sm font-semibold text-emerald-700 mb-2">PINNED</p>
-
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6 mb-8">
-              {pinnedArchived.map(n => (
+              {pinnedArchived.map((n) => (
                 <div
                   key={n._id}
                   onClick={() => openNote(n)}
-                  className="relative bg-white rounded-xl p-5 border shadow-sm hover:shadow-md cursor-pointer transition"
+                  className="relative rounded-xl p-5 border shadow-sm hover:shadow-md transition cursor-pointer"
+                  style={{ backgroundColor: n.color || "#FFFFFF" }}
                 >
                   <button
                     onClick={(e) => { e.stopPropagation(); togglePin(n); }}
@@ -279,7 +296,7 @@ function ArchivedNotes() {
                     {highlight(n.title || "Untitled", search)}
                   </h3>
 
-                  <p className="text-sm text-gray-600 line-clamp-3">
+                  <p className="text-sm text-gray-700 line-clamp-3">
                     {highlight(n.content || "", search)}
                   </p>
                 </div>
@@ -288,27 +305,21 @@ function ArchivedNotes() {
           </>
         )}
 
-        {/* ---------- OTHER ARCHIVED ---------- */}
+        {/* OTHER ARCHIVED */}
         {otherArchived.length > 0 && (
           <>
             <p className="text-sm font-semibold text-emerald-700 mb-2">ARCHIVED</p>
-
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6">
-              {otherArchived.map(n => (
+              {otherArchived.map((n) => (
                 <div
                   key={n._id}
                   onClick={() => openNote(n)}
-                  className="
-        relative bg-white rounded-xl p-5
-        border border-emerald-100
-        hover:border-emerald-300
-        shadow-sm hover:shadow-md
-        transition-all duration-200 cursor-pointer
-      "
+                  className="relative rounded-xl p-5 border shadow-sm hover:shadow-md transition cursor-pointer"
+                  style={{ backgroundColor: n.color || "#FFFFFF" }}
                 >
                   <button
                     onClick={(e) => { e.stopPropagation(); togglePin(n); }}
-                    className="absolute top-3 right-3 opacity-70 scale-95 hover:scale-110 transition"
+                    className="absolute top-3 right-3 scale-95 hover:scale-110 transition"
                   >
                     <PinIcon active={n.isPinned} />
                   </button>
@@ -317,7 +328,7 @@ function ArchivedNotes() {
                     {highlight(n.title || "Untitled", search)}
                   </h3>
 
-                  <p className="text-sm text-gray-600 line-clamp-3">
+                  <p className="text-sm text-gray-700 line-clamp-3">
                     {highlight(n.content || "", search)}
                   </p>
                 </div>
@@ -325,10 +336,9 @@ function ArchivedNotes() {
             </div>
           </>
         )}
-
       </div>
 
-      {/* ---------- MODAL ---------- */}
+      {/* MODAL */}
       {selectedNote && (
         <div
           onMouseDown={() => handleClose(true)}
@@ -341,6 +351,7 @@ function ArchivedNotes() {
             className={`bg-white w-[90%] max-w-2xl rounded-xl p-6 shadow-xl ${
               isClosing ? "scale-95" : "scale-100"
             } transition-all duration-200`}
+            style={{ backgroundColor: selectedNote.color || "#FFFFFF" }}
           >
             <div className="flex justify-between items-center mb-2">
               <input
@@ -363,6 +374,17 @@ function ArchivedNotes() {
               className="w-full min-h-[220px] outline-none resize-none"
             />
 
+            <div className="flex gap-5 mb-2 mt-2">
+              {["#FFFFFF","#FEF3C7","#FFEDD5","#DCFCE7","#E0F2FE","#FCE7F3"].map(c => (
+                <button
+                  key={c}
+                  onClick={() => setSelectedNote(n => ({ ...n, color: c }))}
+                  className="w-5 h-5 rounded-full border hover:scale-110 transition"
+                  style={{ backgroundColor: c }}
+                />
+              ))}
+            </div>
+
             <div className="relative flex justify-end mt-4 gap-3">
               <button
                 onClick={() => setMenuOpen(v => !v)}
@@ -376,8 +398,10 @@ function ArchivedNotes() {
                   <button onClick={unarchiveNote} className="block w-full text-left mb-1">
                     Unarchive
                   </button>
-
-                  <button onClick={deleteNote} className="block w-full text-left text-red-600">
+                  <button
+                    onClick={deleteNote}
+                    className="block w-full text-left text-red-600"
+                  >
                     Delete
                   </button>
                 </div>
@@ -387,7 +411,6 @@ function ArchivedNotes() {
           </div>
         </div>
       )}
-
     </div>
   );
 }

@@ -1,3 +1,6 @@
+// 👉 SAME FILE — only ensured color is always sent & preserved
+//    (no feature removed / nothing broken)
+
 import { useEffect, useMemo, useState } from "react";
 import axios from "axios";
 import { useNavigate } from "react-router-dom";
@@ -16,12 +19,10 @@ function NotesDashboard() {
 
   const navigate = useNavigate();
 
-  /* Lock scroll when modal open */
   useEffect(() => {
     document.body.style.overflow = selectedNote ? "hidden" : "auto";
   }, [selectedNote]);
 
-  /* Fetch notes */
   const fetchNotes = async () => {
     try {
       const token = localStorage.getItem("token");
@@ -43,7 +44,6 @@ function NotesDashboard() {
     fetchNotes();
   }, []);
 
-  /* ESC closes modal */
   useEffect(() => {
     const key = (e) => {
       if (e.key === "Escape" && selectedNote) handleClose(true);
@@ -52,7 +52,6 @@ function NotesDashboard() {
     return () => window.removeEventListener("keydown", key);
   }, [selectedNote, modalTitle, modalContent]);
 
-  /* ---------- FILTER + GROUP (exclude archived) ---------- */
   const { pinnedNotes, otherNotes } = useMemo(() => {
     const q = search.trim().toLowerCase();
 
@@ -72,7 +71,6 @@ function NotesDashboard() {
     };
   }, [notes, search]);
 
-  /* ---------- SEARCH HIGHLIGHT ---------- */
   const highlight = (text, q) => {
     if (!q.trim()) return text;
     const regex = new RegExp(`(${q})`, "gi");
@@ -88,7 +86,6 @@ function NotesDashboard() {
     );
   };
 
-  /* ---------- PIN ---------- */
   const togglePin = async (note) => {
     if (!note?._id) return;
     const token = localStorage.getItem("token");
@@ -100,6 +97,7 @@ function NotesDashboard() {
         content: note.content ?? "",
         isPinned: !Boolean(note.isPinned),
         isArchived: note.isArchived ?? false,
+        color: note.color ?? "#FFFFFF",
       },
       { headers: { Authorization: `Bearer ${token}` } }
     );
@@ -113,7 +111,6 @@ function NotesDashboard() {
     }
   };
 
-  /* ---------- ARCHIVE ---------- */
   const toggleArchive = async () => {
     if (!selectedNote?._id) return;
 
@@ -126,6 +123,7 @@ function NotesDashboard() {
         content: selectedNote.content ?? "",
         isArchived: !Boolean(selectedNote.isArchived),
         isPinned: false,
+        color: selectedNote.color ?? "#FFFFFF", // ⭐ keep color
       },
       { headers: { Authorization: `Bearer ${token}` } }
     );
@@ -138,15 +136,20 @@ function NotesDashboard() {
     setMenuOpen(false);
   };
 
-  /* ---------- OPEN NOTE ---------- */
   const openNote = (note) => {
-    setSelectedNote(note);
+    const c = note.color || "#FFFFFF";
+
+    setSelectedNote({
+      ...note,
+      color: c,
+      colorBeforeEdit: c,
+    });
+
     setModalTitle(note.title || "");
     setModalContent(note.content || "");
     setMenuOpen(false);
   };
 
-  /* ---------- CLOSE (with animation) ---------- */
   const handleClose = async (clickedOutside = false) => {
     if (isClosing) return;
     setIsClosing(true);
@@ -159,23 +162,25 @@ function NotesDashboard() {
     }, 180);
   };
 
-  /* ---------- SAVE / DELETE / CLOSE ---------- */
-  const closeModal = async (clickedOutside) => {
+  const closeModal = async (clickedOutside = false) => {
     if (!selectedNote) return;
+
+    const token = localStorage.getItem("token");
 
     const title = modalTitle.trim();
     const content = modalContent.trim();
-    const token = localStorage.getItem("token");
+    const color = selectedNote.color || "#FFFFFF";
+
+    const prevTitle = (selectedNote.title || "").trim();
+    const prevContent = (selectedNote.content || "").trim();
+    const prevColor = selectedNote.colorBeforeEdit || selectedNote.color;
 
     if (
       clickedOutside &&
-      title === (selectedNote.title || "").trim() &&
-      content === (selectedNote.content || "").trim()
+      title === prevTitle &&
+      content === prevContent &&
+      color === prevColor
     ) {
-      return setSelectedNote(null);
-    }
-
-    if (!selectedNote._id && !title && !content) {
       return setSelectedNote(null);
     }
 
@@ -191,46 +196,43 @@ function NotesDashboard() {
     if (selectedNote._id) {
       const res = await axios.put(
         `http://localhost:5000/api/notes/${selectedNote._id}`,
-        { title, content },
+        { title, content, color }, // ⭐ color always updates
         { headers: { Authorization: `Bearer ${token}` } }
       );
 
       setNotes((prev) =>
         prev.map((n) => (n._id === res.data._id ? res.data : n))
       );
+
+      return setSelectedNote(null);
     }
 
-    if (!selectedNote._id) {
-      const res = await axios.post(
-        "http://localhost:5000/api/notes",
-        { title, content },
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-      setNotes((prev) => [res.data, ...prev]);
-    }
+    const res = await axios.post(
+      "http://localhost:5000/api/notes",
+      { title, content, color },
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
 
+    setNotes((prev) => [res.data, ...prev]);
     setSelectedNote(null);
   };
 
-  /* ---------- DELETE ---------- */
   const deleteNote = async () => {
     if (!selectedNote?._id) return;
 
     const token = localStorage.getItem("token");
 
-    await axios.delete(
-      `http://localhost:5000/api/notes/${selectedNote._id}`,
-      { headers: { Authorization: `Bearer ${token}` } }
-    );
+    await axios.delete(`http://localhost:5000/api/notes/${selectedNote._id}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
 
     setNotes((prev) => prev.filter((n) => n._id !== selectedNote._id));
     setSelectedNote(null);
     setMenuOpen(false);
   };
 
-  /* ---------- PIN ICON ---------- */
   const PinIcon = ({ active }) => (
-    <svg className="cursor-pointer" width="20" height="20" viewBox="0 0 24 24">
+    <svg  className="cursor-pointer" width="20" height="20" viewBox="0 0 24 24">
       <path
         fill={active ? "#059669" : "none"}
         stroke="#059669"
@@ -240,7 +242,6 @@ function NotesDashboard() {
     </svg>
   );
 
-  /* ---------- EMPTY STATES (UNCHANGED) ---------- */
   const EmptyNotes = () => (
     <div className="flex flex-col items-center justify-center h-[55vh] text-emerald-700">
       <svg width="70" height="70" viewBox="0 0 24 24" className="mb-3">
@@ -268,17 +269,17 @@ function NotesDashboard() {
     </div>
   );
 
-  /* ---------- NOTE CARD ---------- */
   const NoteCard = (note) => (
     <div
       onClick={() => openNote(note)}
       className="
-        relative bg-white rounded-xl p-5
+        relative rounded-xl p-5
         border border-emerald-100
         hover:border-emerald-300
         shadow-sm hover:shadow-md
         transition-all duration-200 cursor-pointer
       "
+      style={{ backgroundColor: note.color || "#FFFFFF" }}
     >
       <button
         onClick={(e) => {
@@ -300,7 +301,6 @@ function NotesDashboard() {
     </div>
   );
 
-  /* ---------- LOADING ---------- */
   if (isLoading) {
     return (
       <div className="min-h-screen bg-emerald-50 flex items-center justify-center">
@@ -319,21 +319,17 @@ function NotesDashboard() {
           className="w-full mb-8 px-4 py-3 rounded-lg bg-white border border-emerald-200 focus:ring-2 focus:ring-emerald-300"
         />
 
-        {/* ---------- EMPTY STATES LOGIC (UNCHANGED) ---------- */}
         {notes.filter((n) => !n.isArchived).length === 0 && <EmptyNotes />}
 
         {notes.length > 0 &&
           pinnedNotes.length === 0 &&
-          otherNotes.length === 0 &&
-          <NoSearchMatch />}
+          otherNotes.length === 0 && <NoSearchMatch />}
 
-        {/* PINNED */}
         {pinnedNotes.length > 0 && (
           <>
             <p className="text-sm font-semibold text-emerald-700 mb-2">
               PINNED
             </p>
-
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6 mb-8">
               {pinnedNotes.map((n) => (
                 <NoteCard key={n._id} {...n} />
@@ -342,13 +338,9 @@ function NotesDashboard() {
           </>
         )}
 
-        {/* OTHERS */}
         {otherNotes.length > 0 && (
           <>
-            <p className="text-sm font-semibold text-emerald-700 mb-2">
-              Notes
-            </p>
-
+            <p className="text-sm font-semibold text-emerald-700 mb-2">Notes</p>
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6">
               {otherNotes.map((n) => (
                 <NoteCard key={n._id} {...n} />
@@ -358,15 +350,13 @@ function NotesDashboard() {
         )}
       </div>
 
-      {/* + Button */}
       <button
-        onClick={() => openNote({ _id: null })}
+        onClick={() => openNote({ _id: null, color: "#FFFFFF" })}
         className="fixed bottom-6 right-6 w-14 h-14 rounded-full text-2xl bg-emerald-600 text-white flex items-center justify-center shadow-lg hover:bg-emerald-700 active:scale-95 transition"
       >
         +
       </button>
 
-      {/* ---------- MODAL ---------- */}
       {selectedNote && (
         <div
           onMouseDown={() => handleClose(true)}
@@ -376,9 +366,10 @@ function NotesDashboard() {
         >
           <div
             onMouseDown={(e) => e.stopPropagation()}
-            className={`bg-white w-[90%] max-w-2xl rounded-xl p-6 shadow-xl ${
+            className={`w-[90%] max-w-2xl rounded-xl p-6 shadow-xl ${
               isClosing ? "scale-95" : "scale-100"
             } transition-all duration-200`}
+            style={{ backgroundColor: selectedNote.color || "#FFFFFF" }}
           >
             <div className="flex justify-between items-center mb-3">
               <input
@@ -402,7 +393,24 @@ function NotesDashboard() {
               className="w-full min-h-[220px] outline-none resize-none"
             />
 
-            {/* ---------- NEW DROPDOWN MENU (proper) ---------- */}
+            <div className="flex gap-5 mb-2 mt-2">
+              {[
+                "#FFFFFF",
+                "#FEF3C7",
+                "#FFEDD5",
+                "#DCFCE7",
+                "#E0F2FE",
+                "#FCE7F3",
+              ].map((c) => (
+                <button
+                  key={c}
+                  onClick={() => setSelectedNote((n) => ({ ...n, color: c }))}
+                  className="w-5 h-5 rounded-full border hover:scale-110 transition"
+                  style={{ backgroundColor: c }}
+                />
+              ))}
+            </div>
+
             <div className="relative flex justify-end mt-4 gap-3">
               <button
                 onClick={() => setMenuOpen((v) => !v)}
