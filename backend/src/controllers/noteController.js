@@ -5,7 +5,7 @@ import Note from "../models/Note.js";
 // =======================
 export const createNote = async (req, res) => {
   try {
-    const { title = "", content = "", color = "#FFFFFF" } = req.body;
+    let { title = "", content = "", color = "#FFFFFF", labels = [] } = req.body;
 
     const trimmedTitle = title.trim();
     const trimmedContent = content.trim();
@@ -16,10 +16,18 @@ export const createNote = async (req, res) => {
         .json({ message: "Title or content is required" });
     }
 
+    // ⭐ Ensure labels are clean + unique
+    if (!Array.isArray(labels)) labels = [];
+    labels = labels
+      .map(l => String(l).trim())
+      .filter(l => l.length > 0);
+    labels = [...new Set(labels)];
+
     const note = await Note.create({
       title: trimmedTitle,
       content: trimmedContent,
-      color,                 // ⭐ store color on create
+      color,
+      labels,
       user: req.user._id,
     });
 
@@ -44,9 +52,9 @@ export const getNotes = async (req, res) => {
     const query = { user: userId };
 
     if (onlyDeleted) {
-      query.isDeleted = true;           // fetch only trash
+      query.isDeleted = true;
     } else {
-      query.isDeleted = { $ne: true };  // exclude trash
+      query.isDeleted = { $ne: true };
     }
 
     const notes = await Note.find(query).sort({ createdAt: -1 });
@@ -74,17 +82,34 @@ export const updateNote = async (req, res) => {
       return res.status(401).json({ message: "Not authorized" });
     }
 
-    // ⭐ include color (and keep existing flags)
-    const { title, content, isPinned, isArchived, isDeleted, color } = req.body;
+    let {
+      title,
+      content,
+      isPinned,
+      isArchived,
+      isDeleted,
+      color,
+      labels
+    } = req.body;
 
     if (title !== undefined) note.title = title.trim();
     if (content !== undefined) note.content = content.trim();
     if (isPinned !== undefined) note.isPinned = isPinned;
     if (isArchived !== undefined) note.isArchived = isArchived;
     if (isDeleted !== undefined) note.isDeleted = isDeleted;
-    if (color !== undefined) note.color = color;   // ⭐ save color
+    if (color !== undefined) note.color = color;
 
-    // if both fields empty → permanent delete
+    // ⭐ Handle label update safely
+    if (labels !== undefined) {
+      if (!Array.isArray(labels)) labels = [];
+      labels = labels
+        .map(l => String(l).trim())
+        .filter(l => l.length > 0);
+      labels = [...new Set(labels)];
+      note.labels = labels;
+    }
+
+    // delete permanently if empty
     if (!note.title && !note.content) {
       await note.deleteOne();
       return res.json({ deleted: true, id: note._id });
@@ -112,18 +137,18 @@ export const deleteNote = async (req, res) => {
     if (note.user.toString() !== userId.toString())
       return res.status(401).json({ message: "Not authorized" });
 
-    // If not yet deleted → move to trash
+    // Move to trash first
     if (!note.isDeleted) {
       note.isDeleted = true;
       note.isPinned = false;
       note.isArchived = false;
-      note.deletedAt = Date.now();   // ⭐ needed for auto delete 30 days
+      note.deletedAt = Date.now();
 
       const trashed = await note.save();
       return res.json({ movedToTrash: true, note: trashed });
     }
 
-    // If already in trash → permanent delete
+    // Delete permanently
     await note.deleteOne();
     res.json({ deletedForever: true });
 

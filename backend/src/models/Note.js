@@ -36,6 +36,10 @@ const notesSchema = new mongoose.Schema(
       type: String,
       default: "#FFFFFF"   // white note by default
     },
+    labels: {
+      type: [String],
+      default: []
+    },
 
 
 

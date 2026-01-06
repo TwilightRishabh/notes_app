@@ -1,4 +1,5 @@
-// ⭐ ArchivedNotes — color preserved + perfectly-centered icon
+// ⭐ ArchivedNotes — label search + highlight + label editing
+//    (no features removed / behavior preserved)
 
 import { useEffect, useMemo, useState } from "react";
 import axios from "axios";
@@ -13,8 +14,12 @@ function ArchivedNotes() {
   const [modalContent, setModalContent] = useState("");
   const [menuOpen, setMenuOpen] = useState(false);
   const [isClosing, setIsClosing] = useState(false);
-
   const [isLoading, setIsLoading] = useState(true);
+
+  // ⭐ Label editing state
+  const [modalLabels, setModalLabels] = useState([]);
+  const [labelInput, setLabelInput] = useState("");
+  const [showLabelEditor, setShowLabelEditor] = useState(false);
 
   const navigate = useNavigate();
 
@@ -39,9 +44,7 @@ function ArchivedNotes() {
     }
   };
 
-  useEffect(() => {
-    fetchNotes();
-  }, []);
+  useEffect(() => { fetchNotes(); }, []);
 
   useEffect(() => {
     const key = (e) => {
@@ -49,8 +52,9 @@ function ArchivedNotes() {
     };
     window.addEventListener("keydown", key);
     return () => window.removeEventListener("keydown", key);
-  }, [selectedNote, modalTitle, modalContent]);
+  }, [selectedNote, modalTitle, modalContent, modalLabels]);
 
+  /* ---------- ⭐ highlight helper (labels included) ---------- */
   const highlight = (text = "", q) => {
     if (!q.trim()) return text;
     const regex = new RegExp(`(${q})`, "gi");
@@ -65,16 +69,23 @@ function ArchivedNotes() {
     );
   };
 
+  /* ---------- ⭐ SEARCH also matches labels ---------- */
   const { pinnedArchived, otherArchived, totalArchived } = useMemo(() => {
     const q = search.trim().toLowerCase();
     const archived = notes.filter((n) => n.isArchived);
 
     const filtered = q
-      ? archived.filter(
-          (n) =>
-            n.title?.toLowerCase().includes(q) ||
-            n.content?.toLowerCase().includes(q)
-        )
+      ? archived.filter((n) => {
+          const inTitle = n.title?.toLowerCase().includes(q);
+          const inContent = n.content?.toLowerCase().includes(q);
+
+          // ⭐ search matches label too
+          const inLabels = n.labels?.some((lbl) =>
+            lbl.toLowerCase().includes(q)
+          );
+
+          return inTitle || inContent || inLabels;
+        })
       : archived;
 
     return {
@@ -84,50 +95,19 @@ function ArchivedNotes() {
     };
   }, [notes, search]);
 
-  /* ---------- NO SEARCH MATCH (⭐ arrow centered inside box) ---------- */
-  const NoSearchMatch = () => (
-    <div className="flex flex-col items-center justify-center h-[40vh] text-gray-600">
-      <svg width="72" height="72" viewBox="0 0 24 24" className="mb-3">
-        {/* Box */}
-        <rect
-          x="3"
-          y="7"
-          width="18"
-          height="13"
-          rx="2"
-          ry="2"
-          fill="none"
-          stroke="#6b7280"
-          strokeWidth="2"
-        />
-        {/* Lid line */}
-        <path
-          d="M3 10h18"
-          fill="none"
-          stroke="#6b7280"
-          strokeWidth="2"
-        />
-        {/* ⭐ centered arrow */}
-        <path
-          d="M12 11v4
-             m-3-2 3 3 3-3"
-          fill="none"
-          stroke="#6b7280"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-      </svg>
-      <p className="font-medium">No matching notes</p>
-    </div>
-  );
-
   /* ---------- OPEN NOTE ---------- */
   const openNote = (note) => {
     const c = note.color || "#FFFFFF";
+
     setSelectedNote({ ...note, color: c, colorBeforeEdit: c });
     setModalTitle(note.title || "");
     setModalContent(note.content || "");
+
+    // load labels into modal editor
+    setModalLabels(note.labels || []);
+    setLabelInput("");
+    setShowLabelEditor(false);
+
     setMenuOpen(false);
   };
 
@@ -138,6 +118,7 @@ function ArchivedNotes() {
     setTimeout(() => {
       setIsClosing(false);
       setMenuOpen(false);
+      setShowLabelEditor(false);
     }, 180);
   };
 
@@ -152,12 +133,14 @@ function ArchivedNotes() {
     const prevTitle = (selectedNote.title || "").trim();
     const prevContent = (selectedNote.content || "").trim();
     const prevColor = selectedNote.colorBeforeEdit || selectedNote.color;
+    const prevLabels = selectedNote.labels || [];
 
     if (
       clickedOutside &&
       title === prevTitle &&
       content === prevContent &&
-      color === prevColor
+      color === prevColor &&
+      JSON.stringify(modalLabels) === JSON.stringify(prevLabels)
     ) {
       return setSelectedNote(null);
     }
@@ -171,9 +154,10 @@ function ArchivedNotes() {
       return setSelectedNote(null);
     }
 
+    // ⭐ save labels too
     const res = await axios.put(
       `http://localhost:5000/api/notes/${selectedNote._id}`,
-      { title, content, color },
+      { title, content, color, labels: modalLabels },
       { headers: { Authorization: `Bearer ${token}` } }
     );
 
@@ -181,6 +165,7 @@ function ArchivedNotes() {
     setSelectedNote(null);
   };
 
+  /* ---------- ACTIONS ---------- */
   const togglePin = async (note) => {
     if (!note?._id) return;
     const token = localStorage.getItem("token");
@@ -193,12 +178,12 @@ function ArchivedNotes() {
         isPinned: !Boolean(note.isPinned),
         isArchived: true,
         color: note.color ?? "#FFFFFF",
+        labels: note.labels ?? [],
       },
       { headers: { Authorization: `Bearer ${token}` } }
     );
 
     setNotes((p) => p.map((n) => (n._id === res.data._id ? res.data : n)));
-
     if (selectedNote && selectedNote._id === res.data._id) {
       setSelectedNote(res.data);
     }
@@ -206,16 +191,11 @@ function ArchivedNotes() {
 
   const unarchiveNote = async () => {
     if (!selectedNote?._id) return;
-
     const token = localStorage.getItem("token");
 
     const res = await axios.put(
       `http://localhost:5000/api/notes/${selectedNote._id}`,
-      {
-        ...selectedNote,
-        isArchived: false,
-        color: selectedNote.color ?? "#FFFFFF",
-      },
+      { ...selectedNote, isArchived: false, labels: modalLabels },
       { headers: { Authorization: `Bearer ${token}` } }
     );
 
@@ -250,6 +230,8 @@ function ArchivedNotes() {
     </svg>
   );
 
+  /* ---------- UI ---------- */
+
   if (isLoading) {
     return (
       <div className="min-h-screen bg-emerald-50 flex items-center justify-center">
@@ -257,6 +239,25 @@ function ArchivedNotes() {
       </div>
     );
   }
+
+  const NoSearchMatch = () => (
+    <div className="flex flex-col items-center justify-center h-[40vh] text-gray-600">
+      <svg width="72" height="72" viewBox="0 0 24 24" className="mb-3">
+        <rect x="3" y="7" width="18" height="13" rx="2" ry="2"
+          fill="none" stroke="#6b7280" strokeWidth="2" />
+        <path d="M3 10h18" fill="none" stroke="#6b7280" strokeWidth="2" />
+        <path
+          d="M12 11v4 m-3-2 3 3 3-3"
+          fill="none"
+          stroke="#6b7280"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      </svg>
+      <p className="font-medium">No matching notes</p>
+    </div>
+  );
 
   return (
     <div className="min-h-screen bg-emerald-50 px-6 py-8">
@@ -273,7 +274,7 @@ function ArchivedNotes() {
           otherArchived.length === 0 &&
           <NoSearchMatch />}
 
-        {/* PINNED */}
+        {/* ---------- PINNED ---------- */}
         {pinnedArchived.length > 0 && (
           <>
             <p className="text-sm font-semibold text-emerald-700 mb-2">PINNED</p>
@@ -299,13 +300,27 @@ function ArchivedNotes() {
                   <p className="text-sm text-gray-700 line-clamp-3">
                     {highlight(n.content || "", search)}
                   </p>
+
+                  {/* ⭐ label highlight in cards */}
+                  {n.labels?.length > 0 && (
+                    <div className="flex flex-wrap gap-1 mt-3">
+                      {n.labels.map((lbl, i) => (
+                        <span
+                          key={i}
+                          className="text-xs px-2 py-0.5 bg-emerald-50 border border-emerald-200 rounded-full"
+                        >
+                          {highlight(lbl, search)}
+                        </span>
+                      ))}
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
           </>
         )}
 
-        {/* OTHER ARCHIVED */}
+        {/* ---------- OTHER ARCHIVED ---------- */}
         {otherArchived.length > 0 && (
           <>
             <p className="text-sm font-semibold text-emerald-700 mb-2">ARCHIVED</p>
@@ -331,6 +346,20 @@ function ArchivedNotes() {
                   <p className="text-sm text-gray-700 line-clamp-3">
                     {highlight(n.content || "", search)}
                   </p>
+
+                  {/* ⭐ label highlight in cards */}
+                  {n.labels?.length > 0 && (
+                    <div className="flex flex-wrap gap-1 mt-3">
+                      {n.labels.map((lbl, i) => (
+                        <span
+                          key={i}
+                          className="text-xs px-2 py-0.5 bg-emerald-50 border border-emerald-200 rounded-full"
+                        >
+                          {highlight(lbl, search)}
+                        </span>
+                      ))}
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
@@ -338,7 +367,7 @@ function ArchivedNotes() {
         )}
       </div>
 
-      {/* MODAL */}
+      {/* ---------- MODAL ---------- */}
       {selectedNote && (
         <div
           onMouseDown={() => handleClose(true)}
@@ -374,38 +403,134 @@ function ArchivedNotes() {
               className="w-full min-h-[220px] outline-none resize-none"
             />
 
-            <div className="flex gap-5 mb-2 mt-2">
-              {["#FFFFFF","#FEF3C7","#FFEDD5","#DCFCE7","#E0F2FE","#FCE7F3"].map(c => (
-                <button
-                  key={c}
-                  onClick={() => setSelectedNote(n => ({ ...n, color: c }))}
-                  className="w-5 h-5 rounded-full border hover:scale-110 transition"
-                  style={{ backgroundColor: c }}
-                />
-              ))}
-            </div>
-
-            <div className="relative flex justify-end mt-4 gap-3">
-              <button
-                onClick={() => setMenuOpen(v => !v)}
-                className="px-3 py-1 border rounded"
-              >
-                ⋮
-              </button>
-
-              {menuOpen && (
-                <div className="absolute bottom-12 right-0 bg-white border rounded shadow px-3 py-2 w-28">
-                  <button onClick={unarchiveNote} className="block w-full text-left mb-1">
-                    Unarchive
-                  </button>
-                  <button
-                    onClick={deleteNote}
-                    className="block w-full text-left text-red-600"
+            {/* ⭐ labels in modal also highlight search */}
+            {modalLabels.length > 0 && (
+              <div className="flex flex-wrap gap-2 mt-3 mb-2">
+                {modalLabels.map((lbl, i) => (
+                  <span
+                    key={i}
+                    className="px-2 py-1 text-xs rounded-full bg-emerald-50 border border-emerald-200 flex items-center gap-1"
                   >
-                    Delete
-                  </button>
-                </div>
-              )}
+                    {highlight(lbl, search)}
+                    <button
+                      onClick={() =>
+                        setModalLabels(prev => prev.filter(l => l !== lbl))
+                      }
+                      className="text-emerald-600 hover:text-red-500"
+                    >
+                      ✕
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
+
+            <div className="flex items-center justify-between mt-3">
+              <div className="flex gap-5">
+                {["#FFFFFF","#FEF3C7","#FFEDD5","#DCFCE7","#E0F2FE","#FCE7F3"].map(c => (
+                  <button
+                    key={c}
+                    onClick={() => setSelectedNote(n => ({ ...n, color: c }))}
+                    className="w-5 h-5 rounded-full border hover:scale-110 transition"
+                    style={{ backgroundColor: c }}
+                  />
+                ))}
+              </div>
+
+              <div className="relative">
+                <button
+                  onClick={() => setMenuOpen(v => !v)}
+                  className="px-3 py-1 border rounded"
+                >
+                  ⋮
+                </button>
+
+                {menuOpen && (
+                  <div className="absolute bottom-12 right-0 bg-white border rounded shadow px-3 py-2 w-28">
+                    <button
+                      onClick={() => {
+                        setShowLabelEditor(true);
+                        setMenuOpen(false);
+                      }}
+                      className="block w-full text-left mb-1"
+                    >
+                      Edit Labels
+                    </button>
+
+                    <button onClick={unarchiveNote} className="block w-full text-left mb-1">
+                      Unarchive
+                    </button>
+
+                    <button
+                      onClick={deleteNote}
+                      className="block w-full text-left text-red-600"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                )}
+
+                {showLabelEditor && (
+                  <div className="absolute bottom-16 right-0 bg-white/80 backdrop-blur-md border border-emerald-200 rounded-xl shadow-lg p-3 w-64">
+                    <p className="text-sm font-medium text-emerald-700 mb-2">
+                      Edit Labels
+                    </p>
+
+                    <div className="flex flex-wrap gap-2 mb-2">
+                      {modalLabels.map((lbl, i) => (
+                        <span
+                          key={i}
+                          className="px-2 py-1 text-xs rounded-full bg-emerald-50/80 border border-emerald-200 flex items-center gap-1"
+                        >
+                          {lbl}
+                          <button
+                            onClick={() =>
+                              setModalLabels(prev => prev.filter(l => l !== lbl))
+                            }
+                            className="text-emerald-600 hover:text-red-500"
+                          >
+                            ✕
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+
+                    <div className="flex gap-2">
+                      <input
+                        value={labelInput}
+                        onChange={(e) => setLabelInput(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            const v = labelInput.trim();
+                            if (v && !modalLabels.includes(v)) {
+                              setModalLabels(prev => [...prev, v]);
+                            }
+                            setLabelInput("");
+                            setShowLabelEditor(false);
+                          }
+                        }}
+                        placeholder="Add label"
+                        className="flex-1 px-2 py-1 text-xs rounded-lg border border-emerald-300 bg-white/70"
+                      />
+
+                      <button
+                        onClick={() => {
+                          const v = labelInput.trim();
+                          if (v && !modalLabels.includes(v)) {
+                            setModalLabels(prev => [...prev, v]);
+                          }
+                          setLabelInput("");
+                          setShowLabelEditor(false);
+                        }}
+                        className="px-2 py-1 text-xs rounded-lg bg-emerald-600/80 text-white hover:bg-emerald-600"
+                      >
+                        Add
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
 
           </div>
