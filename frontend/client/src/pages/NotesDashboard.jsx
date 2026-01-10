@@ -1,7 +1,8 @@
 // 👉 NotesDashboard.jsx
 // Label search + highlight added — no features removed or broken
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useRef } from "react";
+
 import axios from "axios";
 import { useNavigate } from "react-router-dom";
 
@@ -23,6 +24,12 @@ function NotesDashboard() {
 
   // ⭐ Label editor popup
   const [showLabelEditor, setShowLabelEditor] = useState(false);
+
+  // ⭐ Undo / Redo stacks (modal only)
+const undoStack = useRef([]);
+const redoStack = useRef([]);
+const typingTimer = useRef(null);
+
 
   const navigate = useNavigate();
 
@@ -160,6 +167,17 @@ function NotesDashboard() {
     setModalTitle(note.title || "");
     setModalContent(note.content || "");
 
+    // reset undo/redo for new note
+undoStack.current = [];
+    redoStack.current = [];
+    
+    undoStack.current.push({
+  title: note.title || "",
+  content: note.content || "",
+});
+
+
+
     setModalLabels(note.labels || []);
     setLabelInput("");
 
@@ -179,6 +197,47 @@ function NotesDashboard() {
       setShowLabelEditor(false);
     }, 180);
   };
+
+  // ⭐ Undo / Redo helpers (modal only)
+const pushToUndo = () => {
+  if (typingTimer.current) clearTimeout(typingTimer.current);
+
+  typingTimer.current = setTimeout(() => {
+    const last = undoStack.current[undoStack.current.length - 1];
+
+    if (!last || last.title !== modalTitle || last.content !== modalContent) {
+      undoStack.current.push({
+        title: modalTitle,
+        content: modalContent,
+      });
+      redoStack.current = [];
+    }
+  }, 500); // 500ms pause = 1 undo step
+};
+
+const handleUndo = () => {
+  if (undoStack.current.length <= 1) return;
+
+  const current = undoStack.current.pop();
+  redoStack.current.push(current);
+
+  const prev = undoStack.current[undoStack.current.length - 1];
+  setModalTitle(prev.title);
+  setModalContent(prev.content);
+};
+
+
+const handleRedo = () => {
+  if (redoStack.current.length === 0) return;
+
+  const next = redoStack.current.pop();
+  undoStack.current.push(next);
+
+  setModalTitle(next.title);
+  setModalContent(next.content);
+};
+
+
 
   const closeModal = async (clickedOutside = false) => {
     if (!selectedNote) return;
@@ -407,7 +466,11 @@ function NotesDashboard() {
             <div className="flex justify-between items-center mb-3">
               <input
                 value={modalTitle}
-                onChange={(e) => setModalTitle(e.target.value)}
+                onChange={(e) => {
+  pushToUndo();
+  setModalTitle(e.target.value);
+}}
+
                 placeholder="Title"
                 className="w-full text-2xl font-semibold outline-none"
               />
@@ -421,7 +484,11 @@ function NotesDashboard() {
 
             <textarea
               value={modalContent}
-              onChange={(e) => setModalContent(e.target.value)}
+              onChange={(e) => {
+  pushToUndo();
+  setModalContent(e.target.value);
+}}
+
               placeholder="Take a note..."
               className="w-full min-h-[220px] outline-none resize-none"
             />
@@ -473,7 +540,26 @@ function NotesDashboard() {
               </div>
 
               {/* 🎯 ⋮ MENU */}
-              <div className="relative">
+              <div className="flex items-center gap-3 relative">
+
+  {/* Undo */}
+  <button
+    onClick={handleUndo}
+    className="text-xl hover:text-emerald-600"
+    title="Undo"
+  >
+    ⟲
+  </button>
+
+  {/* Redo */}
+  <button
+    onClick={handleRedo}
+    className="text-xl hover:text-emerald-600"
+    title="Redo"
+  >
+    ⟳
+  </button>
+
                 <button
                   onClick={() => setMenuOpen((v) => !v)}
                   className="px-3 py-1 border rounded"
