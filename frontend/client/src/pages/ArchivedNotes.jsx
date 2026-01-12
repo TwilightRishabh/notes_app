@@ -1,7 +1,7 @@
 // ⭐ ArchivedNotes — label search + highlight + label editing
 //    (no features removed / behavior preserved)
+import { useEffect, useMemo, useRef, useState } from "react";
 
-import { useEffect, useMemo, useState } from "react";
 import axios from "axios";
 import { useNavigate } from "react-router-dom";
 
@@ -20,6 +20,13 @@ function ArchivedNotes() {
   const [modalLabels, setModalLabels] = useState([]);
   const [labelInput, setLabelInput] = useState("");
   const [showLabelEditor, setShowLabelEditor] = useState(false);
+
+    // ⭐ Undo / Redo history (per opened note)
+  const undoStack = useRef([]);
+  const redoStack = useRef([]);
+  const typingTimer = useRef(null);
+  const lastSnapshot = useRef({ title: "", content: "" });
+
 
   const navigate = useNavigate();
 
@@ -109,7 +116,66 @@ function ArchivedNotes() {
     setShowLabelEditor(false);
 
     setMenuOpen(false);
+
+
+        // ⭐ Reset undo/redo history for this note
+    undoStack.current = [];
+    redoStack.current = [];
+    lastSnapshot.current = {
+      title: note.title || "",
+      content: note.content || "",
+    };
+
   };
+
+
+    // ⭐ Undo / Redo logic (Google Keep style)
+  const pushHistorySnapshot = () => {
+    const snap = { title: modalTitle, content: modalContent };
+
+    if (
+      snap.title === lastSnapshot.current.title &&
+      snap.content === lastSnapshot.current.content
+    ) return;
+
+    undoStack.current.push(lastSnapshot.current);
+    lastSnapshot.current = snap;
+    redoStack.current = [];
+  };
+
+  const handleUndo = () => {
+    if (!undoStack.current.length) return;
+
+    const prev = undoStack.current.pop();
+    redoStack.current.push({ title: modalTitle, content: modalContent });
+
+    setModalTitle(prev.title);
+    setModalContent(prev.content);
+    lastSnapshot.current = prev;
+  };
+
+  const handleRedo = () => {
+    if (!redoStack.current.length) return;
+
+    const next = redoStack.current.pop();
+    undoStack.current.push({ title: modalTitle, content: modalContent });
+
+    setModalTitle(next.title);
+    setModalContent(next.content);
+    lastSnapshot.current = next;
+  };
+
+  const handleTyping = (type, value) => {
+    if (typingTimer.current) clearTimeout(typingTimer.current);
+
+    if (type === "title") setModalTitle(value);
+    if (type === "content") setModalContent(value);
+
+    typingTimer.current = setTimeout(() => {
+      pushHistorySnapshot();
+    }, 700); // Google Keep style grouping
+  };
+
 
   const handleClose = async (clickedOutside = false) => {
     if (isClosing) return;
@@ -260,182 +326,197 @@ function ArchivedNotes() {
   );
 
   return (
-    <div className="min-h-screen bg-emerald-50 px-6 py-8">
-      <div className="max-w-6xl mx-auto">
-        <input
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search archived notes..."
-          className="w-full mb-8 px-4 py-3 rounded-lg bg-white border border-emerald-200 focus:ring-2 focus:ring-emerald-300"
-        />
+  <div className="min-h-screen bg-emerald-50 px-6 py-8">
+    <div className="max-w-6xl mx-auto">
+      <input
+        value={search}
+        onChange={(e) => setSearch(e.target.value)}
+        placeholder="Search archived notes..."
+        className="w-full mb-8 px-4 py-3 rounded-lg bg-white border border-emerald-200 focus:ring-2 focus:ring-emerald-300"
+      />
 
-        {totalArchived > 0 &&
-          pinnedArchived.length === 0 &&
-          otherArchived.length === 0 &&
-          <NoSearchMatch />}
+      {totalArchived > 0 &&
+        pinnedArchived.length === 0 &&
+        otherArchived.length === 0 &&
+        <NoSearchMatch />}
 
-        {/* ---------- PINNED ---------- */}
-        {pinnedArchived.length > 0 && (
-          <>
-            <p className="text-sm font-semibold text-emerald-700 mb-2">PINNED</p>
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6 mb-8">
-              {pinnedArchived.map((n) => (
-                <div
-                  key={n._id}
-                  onClick={() => openNote(n)}
-                  className="relative rounded-xl p-5 border shadow-sm hover:shadow-md transition cursor-pointer"
-                  style={{ backgroundColor: n.color || "#FFFFFF" }}
-                >
-                  <button
-                    onClick={(e) => { e.stopPropagation(); togglePin(n); }}
-                    className="absolute top-3 right-3 scale-95 hover:scale-110 transition"
-                  >
-                    <PinIcon active={n.isPinned} />
-                  </button>
-
-                  <h3 className="font-semibold mb-2 truncate">
-                    {highlight(n.title || "Untitled", search)}
-                  </h3>
-
-                  <p className="text-sm text-gray-700 line-clamp-3">
-                    {highlight(n.content || "", search)}
-                  </p>
-
-                  {/* ⭐ label highlight in cards */}
-                  {n.labels?.length > 0 && (
-                    <div className="flex flex-wrap gap-1 mt-3">
-                      {n.labels.map((lbl, i) => (
-                        <span
-                          key={i}
-                          className="text-xs px-2 py-0.5 bg-emerald-50 border border-emerald-200 rounded-full"
-                        >
-                          {highlight(lbl, search)}
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          </>
-        )}
-
-        {/* ---------- OTHER ARCHIVED ---------- */}
-        {otherArchived.length > 0 && (
-          <>
-            <p className="text-sm font-semibold text-emerald-700 mb-2">ARCHIVED</p>
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6">
-              {otherArchived.map((n) => (
-                <div
-                  key={n._id}
-                  onClick={() => openNote(n)}
-                  className="relative rounded-xl p-5 border shadow-sm hover:shadow-md transition cursor-pointer"
-                  style={{ backgroundColor: n.color || "#FFFFFF" }}
-                >
-                  <button
-                    onClick={(e) => { e.stopPropagation(); togglePin(n); }}
-                    className="absolute top-3 right-3 scale-95 hover:scale-110 transition"
-                  >
-                    <PinIcon active={n.isPinned} />
-                  </button>
-
-                  <h3 className="font-semibold mb-2 truncate">
-                    {highlight(n.title || "Untitled", search)}
-                  </h3>
-
-                  <p className="text-sm text-gray-700 line-clamp-3">
-                    {highlight(n.content || "", search)}
-                  </p>
-
-                  {/* ⭐ label highlight in cards */}
-                  {n.labels?.length > 0 && (
-                    <div className="flex flex-wrap gap-1 mt-3">
-                      {n.labels.map((lbl, i) => (
-                        <span
-                          key={i}
-                          className="text-xs px-2 py-0.5 bg-emerald-50 border border-emerald-200 rounded-full"
-                        >
-                          {highlight(lbl, search)}
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          </>
-        )}
-      </div>
-
-      {/* ---------- MODAL ---------- */}
-      {selectedNote && (
-        <div
-          onMouseDown={() => handleClose(true)}
-          className={`fixed inset-0 bg-black/50 flex items-center justify-center z-50 ${
-            isClosing ? "opacity-0 transition" : ""
-          }`}
-        >
-          <div
-            onMouseDown={(e) => e.stopPropagation()}
-            className={`bg-white w-[90%] max-w-2xl rounded-xl p-6 shadow-xl ${
-              isClosing ? "scale-95" : "scale-100"
-            } transition-all duration-200`}
-            style={{ backgroundColor: selectedNote.color || "#FFFFFF" }}
-          >
-            <div className="flex justify-between items-center mb-2">
-              <input
-                value={modalTitle}
-                onChange={(e) => setModalTitle(e.target.value)}
-                className="w-full text-2xl font-semibold outline-none"
-              />
-
-              <button
-                onClick={() => togglePin(selectedNote)}
-                className="scale-95 hover:scale-110 transition"
+      {/* ---------- PINNED ---------- */}
+      {pinnedArchived.length > 0 && (
+        <>
+          <p className="text-sm font-semibold text-emerald-700 mb-2">PINNED</p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6 mb-8">
+            {pinnedArchived.map((n) => (
+              <div
+                key={n._id}
+                onClick={() => openNote(n)}
+                className="relative rounded-xl p-5 border shadow-sm hover:shadow-md transition cursor-pointer"
+                style={{ backgroundColor: n.color || "#FFFFFF" }}
               >
-                <PinIcon active={selectedNote.isPinned} />
-              </button>
-            </div>
+                <button
+                  onClick={(e) => { e.stopPropagation(); togglePin(n); }}
+                  className="absolute top-3 right-3 scale-95 hover:scale-130 transition"
+                >
+                  <PinIcon active={n.isPinned} />
+                </button>
 
-            <textarea
-              value={modalContent}
-              onChange={(e) => setModalContent(e.target.value)}
-              className="w-full min-h-[220px] outline-none resize-none"
+                <h3 className="font-semibold mb-2 truncate">
+                  {highlight(n.title || "Untitled", search)}
+                </h3>
+
+                <p className="text-sm text-gray-700 line-clamp-3">
+                  {highlight(n.content || "", search)}
+                </p>
+
+                {n.labels?.length > 0 && (
+                  <div className="flex flex-wrap gap-1 mt-3">
+                    {n.labels.map((lbl, i) => (
+                      <span
+                        key={i}
+                        className="text-xs px-2 py-0.5 bg-emerald-50 border border-emerald-200 rounded-full"
+                      >
+                        {highlight(lbl, search)}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+
+      {/* ---------- OTHER ARCHIVED ---------- */}
+      {otherArchived.length > 0 && (
+        <>
+          <p className="text-sm font-semibold text-emerald-700 mb-2">ARCHIVED</p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6">
+            {otherArchived.map((n) => (
+              <div
+                key={n._id}
+                onClick={() => openNote(n)}
+                className="relative rounded-xl p-5 border shadow-sm hover:shadow-md transition cursor-pointer"
+                style={{ backgroundColor: n.color || "#FFFFFF" }}
+              >
+                <button
+                  onClick={(e) => { e.stopPropagation(); togglePin(n); }}
+                  className="absolute top-3 right-3 scale-95 hover:scale-130 transition"
+                >
+                  <PinIcon active={n.isPinned} />
+                </button>
+
+                <h3 className="font-semibold mb-2 truncate">
+                  {highlight(n.title || "Untitled", search)}
+                </h3>
+
+                <p className="text-sm text-gray-700 line-clamp-3">
+                  {highlight(n.content || "", search)}
+                </p>
+
+                {n.labels?.length > 0 && (
+                  <div className="flex flex-wrap gap-1 mt-3">
+                    {n.labels.map((lbl, i) => (
+                      <span
+                        key={i}
+                        className="text-xs px-2 py-0.5 bg-emerald-50 border border-emerald-200 rounded-full"
+                      >
+                        {highlight(lbl, search)}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+
+    {/* ---------- MODAL ---------- */}
+    {selectedNote && (
+      <div
+        onMouseDown={() => handleClose(true)}
+        className={`fixed inset-0 bg-black/50 flex items-center justify-center z-50 ${
+          isClosing ? "opacity-0 transition" : ""
+        }`}
+      >
+        <div
+          onMouseDown={(e) => e.stopPropagation()}
+          className={`bg-white w-[90%] max-w-2xl rounded-xl p-6 shadow-xl ${
+            isClosing ? "scale-95" : "scale-100"
+          } transition-all duration-200`}
+          style={{ backgroundColor: selectedNote.color || "#FFFFFF" }}
+        >
+          <div className="flex justify-between items-center mb-2">
+            <input
+              value={modalTitle}
+              onChange={(e) => handleTyping("title", e.target.value)}
+              className="w-full text-2xl font-semibold outline-none"
             />
 
-            {/* ⭐ labels in modal also highlight search */}
-            {modalLabels.length > 0 && (
-              <div className="flex flex-wrap gap-2 mt-3 mb-2">
-                {modalLabels.map((lbl, i) => (
-                  <span
-                    key={i}
-                    className="px-2 py-1 text-xs rounded-full bg-emerald-50 border border-emerald-200 flex items-center gap-1"
-                  >
-                    {highlight(lbl, search)}
-                    <button
-                      onClick={() =>
-                        setModalLabels(prev => prev.filter(l => l !== lbl))
-                      }
-                      className="text-emerald-600 hover:text-red-500"
-                    >
-                      ✕
-                    </button>
-                  </span>
-                ))}
-              </div>
-            )}
+            <button
+              onClick={() => togglePin(selectedNote)}
+              className="scale-95 hover:scale-110 transition"
+            >
+              <PinIcon active={selectedNote.isPinned} />
+            </button>
+          </div>
 
-            <div className="flex items-center justify-between mt-3">
-              <div className="flex gap-5">
-                {["#FFFFFF","#FEF3C7","#FFEDD5","#DCFCE7","#E0F2FE","#FCE7F3"].map(c => (
+          <textarea
+            value={modalContent}
+            onChange={(e) => handleTyping("content", e.target.value)}
+            className="w-full min-h-[220px] outline-none resize-none"
+          />
+
+          {modalLabels.length > 0 && (
+            <div className="flex flex-wrap gap-2 mt-3 mb-2">
+              {modalLabels.map((lbl, i) => (
+                <span
+                  key={i}
+                  className="px-2 py-1 text-xs rounded-full bg-emerald-50 border border-emerald-200 flex items-center gap-1"
+                >
+                  {highlight(lbl, search)}
                   <button
-                    key={c}
-                    onClick={() => setSelectedNote(n => ({ ...n, color: c }))}
-                    className="w-5 h-5 rounded-full border hover:scale-110 transition"
-                    style={{ backgroundColor: c }}
-                  />
-                ))}
-              </div>
+                    onClick={() =>
+                      setModalLabels(prev => prev.filter(l => l !== lbl))
+                    }
+                    className="text-emerald-600 hover:text-red-500"
+                  >
+                    ✕
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
+
+          <div className="flex items-center justify-between mt-3">
+            <div className="flex gap-5">
+              {["#FFFFFF","#FEF3C7","#FFEDD5","#DCFCE7","#E0F2FE","#FCE7F3"].map(c => (
+                <button
+                  key={c}
+                  onClick={() => setSelectedNote(n => ({ ...n, color: c }))}
+                  className="w-5 h-5 rounded-full border hover:scale-110 transition"
+                  style={{ backgroundColor: c }}
+                />
+              ))}
+            </div>
+
+            <div className="flex items-center gap-2">
+
+              {/* Undo */}
+              <button
+                onClick={handleUndo}
+                className="px-2 py-1 text-xl rounded transition-transform duration-150 hover:scale-155 "
+              >
+                ⟲
+              </button>
+
+              {/* Redo */}
+              <button
+                onClick={handleRedo}
+                className="px-2 py-1 text-xl rounded transition-transform duration-150 hover:scale-155"
+              >
+                ⟳
+              </button>
 
               <div className="relative">
                 <button
@@ -532,12 +613,14 @@ function ArchivedNotes() {
                 )}
               </div>
             </div>
-
           </div>
+
         </div>
-      )}
-    </div>
-  );
+      </div>
+    )}
+  </div>
+);
+
 }
 
 export default ArchivedNotes;

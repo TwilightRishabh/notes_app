@@ -18,6 +18,9 @@ function NotesDashboard() {
 
   const [isLoading, setIsLoading] = useState(true);
 
+
+
+  
   // ⭐ Label state
   const [modalLabels, setModalLabels] = useState([]);
   const [labelInput, setLabelInput] = useState("");
@@ -364,7 +367,7 @@ const handleRedo = () => {
           e.stopPropagation();
           togglePin(note);
         }}
-        className="absolute top-3 right-3 scale-95 hover:scale-110 transition"
+        className="absolute top-3 right-3 scale-95 hover:scale-130 transition"
       >
         <PinIcon active={note.isPinned} />
       </button>
@@ -545,7 +548,7 @@ const handleRedo = () => {
   {/* Undo */}
   <button
     onClick={handleUndo}
-    className="text-xl hover:text-emerald-600"
+    className="px-2 py-1 text-xl rounded transition-transform duration-150 hover:scale-155"
     title="Undo"
   >
     ⟲
@@ -554,7 +557,7 @@ const handleRedo = () => {
   {/* Redo */}
   <button
     onClick={handleRedo}
-    className="text-xl hover:text-emerald-600"
+    className="px-2 py-1 text-xl rounded transition-transform duration-150 hover:scale-155"
     title="Redo"
   >
     ⟳
