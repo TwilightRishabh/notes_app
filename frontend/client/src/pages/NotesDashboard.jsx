@@ -18,9 +18,10 @@ function NotesDashboard() {
 
   const [isLoading, setIsLoading] = useState(true);
 
+  // ⭐ Bulk selection state
+  const [selectedIds, setSelectedIds] = useState(new Set());
+  const [selectionMode, setSelectionMode] = useState(false);
 
-
-  
   // ⭐ Label state
   const [modalLabels, setModalLabels] = useState([]);
   const [labelInput, setLabelInput] = useState("");
@@ -29,10 +30,9 @@ function NotesDashboard() {
   const [showLabelEditor, setShowLabelEditor] = useState(false);
 
   // ⭐ Undo / Redo stacks (modal only)
-const undoStack = useRef([]);
-const redoStack = useRef([]);
-const typingTimer = useRef(null);
-
+  const undoStack = useRef([]);
+  const redoStack = useRef([]);
+  const typingTimer = useRef(null);
 
   const navigate = useNavigate();
 
@@ -60,6 +60,29 @@ const typingTimer = useRef(null);
   useEffect(() => {
     fetchNotes();
   }, []);
+
+  // ⭐ Deselect when clicking outside notes (Google Keep behavior)
+// ⭐ Proper outside-click detection (Google Keep behavior)
+useEffect(() => {
+  if (!selectionMode) return;
+
+  const handleOutsideMouseDown = (e) => {
+    const clickedNote = e.target.closest(".note-card");
+    const clickedBar = e.target.closest(".bulk-bar");
+
+    // Only deselect if clicked outside both notes and bar
+    if (!clickedNote && !clickedBar) {
+      clearSelection();
+    }
+  };
+
+  document.addEventListener("mousedown", handleOutsideMouseDown);
+
+  return () => {
+    document.removeEventListener("mousedown", handleOutsideMouseDown);
+  };
+}, [selectionMode]);
+
 
   useEffect(() => {
     const key = (e) => {
@@ -106,6 +129,45 @@ const typingTimer = useRef(null);
       otherNotes: filtered.filter((n) => !n.isPinned),
     };
   }, [notes, search]);
+
+  // ⭐ Selection helpers
+  const toggleSelect = (id) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+
+      setSelectionMode(next.size > 0);
+      return next;
+    });
+  };
+
+  const clearSelection = () => {
+    setSelectedIds(new Set());
+    setSelectionMode(false);
+  };
+
+  const selectAllNotes = () => {
+    const visibleNotes = notes.filter((n) => !n.isArchived);
+    const allIds = new Set(visibleNotes.map((n) => n._id));
+    setSelectedIds(allIds);
+    setSelectionMode(true);
+  };
+
+  const bulkDelete = async () => {
+    const token = localStorage.getItem("token");
+
+    await Promise.all(
+      [...selectedIds].map((id) =>
+        axios.delete(`http://localhost:5000/api/notes/${id}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        })
+      )
+    );
+
+    setNotes((prev) => prev.filter((n) => !selectedIds.has(n._id)));
+    clearSelection();
+  };
 
   const togglePin = async (note) => {
     if (!note?._id) return;
@@ -171,15 +233,13 @@ const typingTimer = useRef(null);
     setModalContent(note.content || "");
 
     // reset undo/redo for new note
-undoStack.current = [];
+    undoStack.current = [];
     redoStack.current = [];
-    
+
     undoStack.current.push({
-  title: note.title || "",
-  content: note.content || "",
-});
-
-
+      title: note.title || "",
+      content: note.content || "",
+    });
 
     setModalLabels(note.labels || []);
     setLabelInput("");
@@ -202,45 +262,42 @@ undoStack.current = [];
   };
 
   // ⭐ Undo / Redo helpers (modal only)
-const pushToUndo = () => {
-  if (typingTimer.current) clearTimeout(typingTimer.current);
+  const pushToUndo = () => {
+    if (typingTimer.current) clearTimeout(typingTimer.current);
 
-  typingTimer.current = setTimeout(() => {
-    const last = undoStack.current[undoStack.current.length - 1];
+    typingTimer.current = setTimeout(() => {
+      const last = undoStack.current[undoStack.current.length - 1];
 
-    if (!last || last.title !== modalTitle || last.content !== modalContent) {
-      undoStack.current.push({
-        title: modalTitle,
-        content: modalContent,
-      });
-      redoStack.current = [];
-    }
-  }, 500); // 500ms pause = 1 undo step
-};
+      if (!last || last.title !== modalTitle || last.content !== modalContent) {
+        undoStack.current.push({
+          title: modalTitle,
+          content: modalContent,
+        });
+        redoStack.current = [];
+      }
+    }, 500); // 500ms pause = 1 undo step
+  };
 
-const handleUndo = () => {
-  if (undoStack.current.length <= 1) return;
+  const handleUndo = () => {
+    if (undoStack.current.length <= 1) return;
 
-  const current = undoStack.current.pop();
-  redoStack.current.push(current);
+    const current = undoStack.current.pop();
+    redoStack.current.push(current);
 
-  const prev = undoStack.current[undoStack.current.length - 1];
-  setModalTitle(prev.title);
-  setModalContent(prev.content);
-};
+    const prev = undoStack.current[undoStack.current.length - 1];
+    setModalTitle(prev.title);
+    setModalContent(prev.content);
+  };
 
+  const handleRedo = () => {
+    if (redoStack.current.length === 0) return;
 
-const handleRedo = () => {
-  if (redoStack.current.length === 0) return;
+    const next = redoStack.current.pop();
+    undoStack.current.push(next);
 
-  const next = redoStack.current.pop();
-  undoStack.current.push(next);
-
-  setModalTitle(next.title);
-  setModalContent(next.content);
-};
-
-
+    setModalTitle(next.title);
+    setModalContent(next.content);
+  };
 
   const closeModal = async (clickedOutside = false) => {
     if (!selectedNote) return;
@@ -352,16 +409,42 @@ const handleRedo = () => {
 
   const NoteCard = (note) => (
     <div
-      onClick={() => openNote(note)}
-      className="
-        relative rounded-xl p-5
-        border border-emerald-100
-        hover:border-emerald-300
-        shadow-sm hover:shadow-md
-        transition-all duration-200 cursor-pointer
-      "
+      onClick={() => {
+        if (selectionMode) return; // block open when selecting
+        openNote(note);
+      }}
+      className={`
+      note-card group relative rounded-xl p-5
+      border
+      ${
+        selectedIds.has(note._id)
+          ? "border-emerald-600 ring-2 ring-emerald-300"
+          : "border-emerald-100 hover:border-emerald-300"
+      }
+      shadow-sm hover:shadow-md
+      transition-all duration-200 cursor-pointer
+    `}
       style={{ backgroundColor: note.color || "#FFFFFF" }}
     >
+      {/* Hover circle */}
+      <button
+        onClick={(e) => {
+          e.stopPropagation();
+          toggleSelect(note._id);
+        }}
+        className={`
+        absolute top-3 left-3 w-6 h-6 rounded-full 
+        border border-emerald-600 bg-white
+        flex items-center justify-center text-sm
+        opacity-0 group-hover:opacity-100
+        transition-opacity duration-200
+        ${selectedIds.has(note._id) ? "opacity-100" : ""}
+      `}
+      >
+        {selectedIds.has(note._id) && "✔"}
+      </button>
+
+      {/* Pin */}
       <button
         onClick={(e) => {
           e.stopPropagation();
@@ -372,7 +455,7 @@ const handleRedo = () => {
         <PinIcon active={note.isPinned} />
       </button>
 
-      <h3 className="font-semibold mb-2 truncate text-gray-800">
+      <h3 className="font-semibold mb-2 truncate text-gray-800 mt-4">
         {highlight(note.title || "Untitled", search)}
       </h3>
 
@@ -380,7 +463,6 @@ const handleRedo = () => {
         {highlight(note.content || "", search)}
       </p>
 
-      {/* ⭐ LABELS NOW HIGHLIGHT SEARCH TERMS */}
       {note.labels?.length > 0 && (
         <div className="flex flex-wrap gap-1 mt-3">
           {note.labels.map((lbl, i) => (
@@ -406,6 +488,58 @@ const handleRedo = () => {
 
   return (
     <div className="min-h-screen bg-emerald-50 px-6 py-8">
+      {/* ⭐ Bulk Action Bar */}
+      {selectionMode && (
+  <div className="bulk-bar fixed top-16 left-0 right-0 h-14 bg-white shadow-md flex items-center px-6 z-50">
+
+    {/* Cancel */}
+    <button
+      onClick={clearSelection}
+      className="text-xl"
+    >
+      ❌
+    </button>
+
+    {/* Selected count */}
+    <span className="ml-4 font-medium text-gray-700">
+      {selectedIds.size} selected
+    </span>
+
+    {/* Right side */}
+    <div className="ml-auto flex items-center gap-3">
+
+      {/* Select all */}
+      {selectedIds.size !== notes.filter(n => !n.isArchived).length && (
+        <button
+          onClick={selectAllNotes}
+          className="px-3 py-1 border rounded"
+        >
+          Select All
+        </button>
+      )}
+
+      {/* Deselect all */}
+      {selectedIds.size === notes.filter(n => !n.isArchived).length && (
+        <button
+          onClick={clearSelection}
+          className="px-3 py-1 border rounded"
+        >
+          Deselect All
+        </button>
+      )}
+
+      {/* Delete */}
+      <button
+        onClick={bulkDelete}
+        className="px-3 py-1 border rounded text-red-600"
+      >
+        Delete
+      </button>
+    </div>
+  </div>
+)}
+
+
       <div className="max-w-6xl mx-auto">
         <input
           value={search}
@@ -470,10 +604,9 @@ const handleRedo = () => {
               <input
                 value={modalTitle}
                 onChange={(e) => {
-  pushToUndo();
-  setModalTitle(e.target.value);
-}}
-
+                  pushToUndo();
+                  setModalTitle(e.target.value);
+                }}
                 placeholder="Title"
                 className="w-full text-2xl font-semibold outline-none"
               />
@@ -488,10 +621,9 @@ const handleRedo = () => {
             <textarea
               value={modalContent}
               onChange={(e) => {
-  pushToUndo();
-  setModalContent(e.target.value);
-}}
-
+                pushToUndo();
+                setModalContent(e.target.value);
+              }}
               placeholder="Take a note..."
               className="w-full min-h-[220px] outline-none resize-none"
             />
@@ -509,9 +641,7 @@ const handleRedo = () => {
                     {highlight(lbl, search)}
                     <button
                       onClick={() =>
-                        setModalLabels((prev) =>
-                          prev.filter((l) => l !== lbl)
-                        )
+                        setModalLabels((prev) => prev.filter((l) => l !== lbl))
                       }
                       className="text-emerald-600 hover:text-red-500"
                     >
@@ -544,24 +674,23 @@ const handleRedo = () => {
 
               {/* 🎯 ⋮ MENU */}
               <div className="flex items-center gap-3 relative">
+                {/* Undo */}
+                <button
+                  onClick={handleUndo}
+                  className="px-2 py-1 text-xl rounded transition-transform duration-150 hover:scale-155"
+                  title="Undo"
+                >
+                  ⟲
+                </button>
 
-  {/* Undo */}
-  <button
-    onClick={handleUndo}
-    className="px-2 py-1 text-xl rounded transition-transform duration-150 hover:scale-155"
-    title="Undo"
-  >
-    ⟲
-  </button>
-
-  {/* Redo */}
-  <button
-    onClick={handleRedo}
-    className="px-2 py-1 text-xl rounded transition-transform duration-150 hover:scale-155"
-    title="Redo"
-  >
-    ⟳
-  </button>
+                {/* Redo */}
+                <button
+                  onClick={handleRedo}
+                  className="px-2 py-1 text-xl rounded transition-transform duration-150 hover:scale-155"
+                  title="Redo"
+                >
+                  ⟳
+                </button>
 
                 <button
                   onClick={() => setMenuOpen((v) => !v)}
@@ -600,8 +729,10 @@ const handleRedo = () => {
 
                 {/* ⭐ LABEL POPUP */}
                 {showLabelEditor && (
-                  <div className="absolute bottom-16 right-0 bg-white/80 backdrop-blur-md
-                                border border-emerald-200 rounded-xl shadow-lg p-3 w-64">
+                  <div
+                    className="absolute bottom-16 right-0 bg-white/80 backdrop-blur-md
+                                border border-emerald-200 rounded-xl shadow-lg p-3 w-64"
+                  >
                     <p className="text-sm font-medium text-emerald-700 mb-2">
                       Edit Labels
                     </p>

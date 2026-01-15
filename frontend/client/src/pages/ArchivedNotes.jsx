@@ -16,17 +16,20 @@ function ArchivedNotes() {
   const [isClosing, setIsClosing] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
 
+  // ⭐ Bulk selection state (same as NotesDashboard)
+  const [selectedIds, setSelectedIds] = useState(new Set());
+  const [selectionMode, setSelectionMode] = useState(false);
+
   // ⭐ Label editing state
   const [modalLabels, setModalLabels] = useState([]);
   const [labelInput, setLabelInput] = useState("");
   const [showLabelEditor, setShowLabelEditor] = useState(false);
 
-    // ⭐ Undo / Redo history (per opened note)
+  // ⭐ Undo / Redo history (per opened note)
   const undoStack = useRef([]);
   const redoStack = useRef([]);
   const typingTimer = useRef(null);
   const lastSnapshot = useRef({ title: "", content: "" });
-
 
   const navigate = useNavigate();
 
@@ -51,7 +54,9 @@ function ArchivedNotes() {
     }
   };
 
-  useEffect(() => { fetchNotes(); }, []);
+  useEffect(() => {
+    fetchNotes();
+  }, []);
 
   useEffect(() => {
     const key = (e) => {
@@ -60,6 +65,26 @@ function ArchivedNotes() {
     window.addEventListener("keydown", key);
     return () => window.removeEventListener("keydown", key);
   }, [selectedNote, modalTitle, modalContent, modalLabels]);
+
+  // ⭐ Deselect when clicking outside notes (Google Keep behavior)
+  useEffect(() => {
+    if (!selectionMode) return;
+
+    const handleOutsideMouseDown = (e) => {
+      const clickedNote = e.target.closest(".note-card");
+      const clickedBar = e.target.closest(".bulk-bar");
+
+      if (!clickedNote && !clickedBar) {
+        clearSelection();
+      }
+    };
+
+    document.addEventListener("mousedown", handleOutsideMouseDown);
+
+    return () => {
+      document.removeEventListener("mousedown", handleOutsideMouseDown);
+    };
+  }, [selectionMode]);
 
   /* ---------- ⭐ highlight helper (labels included) ---------- */
   const highlight = (text = "", q) => {
@@ -117,26 +142,24 @@ function ArchivedNotes() {
 
     setMenuOpen(false);
 
-
-        // ⭐ Reset undo/redo history for this note
+    // ⭐ Reset undo/redo history for this note
     undoStack.current = [];
     redoStack.current = [];
     lastSnapshot.current = {
       title: note.title || "",
       content: note.content || "",
     };
-
   };
 
-
-    // ⭐ Undo / Redo logic (Google Keep style)
+  // ⭐ Undo / Redo logic (Google Keep style)
   const pushHistorySnapshot = () => {
     const snap = { title: modalTitle, content: modalContent };
 
     if (
       snap.title === lastSnapshot.current.title &&
       snap.content === lastSnapshot.current.content
-    ) return;
+    )
+      return;
 
     undoStack.current.push(lastSnapshot.current);
     lastSnapshot.current = snap;
@@ -175,7 +198,6 @@ function ArchivedNotes() {
       pushHistorySnapshot();
     }, 700); // Google Keep style grouping
   };
-
 
   const handleClose = async (clickedOutside = false) => {
     if (isClosing) return;
@@ -231,6 +253,46 @@ function ArchivedNotes() {
     setSelectedNote(null);
   };
 
+  // ⭐ Selection helpers (same as NotesDashboard)
+  const toggleSelect = (id) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+
+      setSelectionMode(next.size > 0);
+      return next;
+    });
+  };
+
+  const clearSelection = () => {
+    setSelectedIds(new Set());
+    setSelectionMode(false);
+  };
+
+  const selectAllNotes = () => {
+  const visibleNotes = [...pinnedArchived, ...otherArchived];
+  const allIds = new Set(visibleNotes.map((n) => n._id));
+  setSelectedIds(allIds);
+  setSelectionMode(true);
+};
+
+
+  const bulkDelete = async () => {
+    const token = localStorage.getItem("token");
+
+    await Promise.all(
+      [...selectedIds].map((id) =>
+        axios.delete(`http://localhost:5000/api/notes/${id}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        })
+      )
+    );
+
+    setNotes((prev) => prev.filter((n) => !selectedIds.has(n._id)));
+    clearSelection();
+  };
+
   /* ---------- ACTIONS ---------- */
   const togglePin = async (note) => {
     if (!note?._id) return;
@@ -275,10 +337,9 @@ function ArchivedNotes() {
 
     const token = localStorage.getItem("token");
 
-    await axios.delete(
-      `http://localhost:5000/api/notes/${selectedNote._id}`,
-      { headers: { Authorization: `Bearer ${token}` } }
-    );
+    await axios.delete(`http://localhost:5000/api/notes/${selectedNote._id}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
 
     setNotes((p) => p.filter((n) => n._id !== selectedNote._id));
     setSelectedNote(null);
@@ -309,8 +370,17 @@ function ArchivedNotes() {
   const NoSearchMatch = () => (
     <div className="flex flex-col items-center justify-center h-[40vh] text-gray-600">
       <svg width="72" height="72" viewBox="0 0 24 24" className="mb-3">
-        <rect x="3" y="7" width="18" height="13" rx="2" ry="2"
-          fill="none" stroke="#6b7280" strokeWidth="2" />
+        <rect
+          x="3"
+          y="7"
+          width="18"
+          height="13"
+          rx="2"
+          ry="2"
+          fill="none"
+          stroke="#6b7280"
+          strokeWidth="2"
+        />
         <path d="M3 10h18" fill="none" stroke="#6b7280" strokeWidth="2" />
         <path
           d="M12 11v4 m-3-2 3 3 3-3"
@@ -326,301 +396,430 @@ function ArchivedNotes() {
   );
 
   return (
-  <div className="min-h-screen bg-emerald-50 px-6 py-8">
-    <div className="max-w-6xl mx-auto">
-      <input
-        value={search}
-        onChange={(e) => setSearch(e.target.value)}
-        placeholder="Search archived notes..."
-        className="w-full mb-8 px-4 py-3 rounded-lg bg-white border border-emerald-200 focus:ring-2 focus:ring-emerald-300"
-      />
+    <div className="min-h-screen bg-emerald-50 px-6 py-8">
 
-      {totalArchived > 0 &&
-        pinnedArchived.length === 0 &&
-        otherArchived.length === 0 &&
-        <NoSearchMatch />}
+      {/* ⭐ Bulk Action Bar */}
+{selectionMode && (
+  <div className="bulk-bar fixed top-16 left-0 right-0 h-14 bg-white shadow-md flex items-center px-6 z-50">
 
-      {/* ---------- PINNED ---------- */}
-      {pinnedArchived.length > 0 && (
-        <>
-          <p className="text-sm font-semibold text-emerald-700 mb-2">PINNED</p>
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6 mb-8">
-            {pinnedArchived.map((n) => (
-              <div
-                key={n._id}
-                onClick={() => openNote(n)}
-                className="relative rounded-xl p-5 border shadow-sm hover:shadow-md transition cursor-pointer"
-                style={{ backgroundColor: n.color || "#FFFFFF" }}
-              >
-                <button
-                  onClick={(e) => { e.stopPropagation(); togglePin(n); }}
-                  className="absolute top-3 right-3 scale-95 hover:scale-130 transition"
-                >
-                  <PinIcon active={n.isPinned} />
-                </button>
+    {/* Cancel */}
+    <button onClick={clearSelection} className="text-xl">
+      ❌
+    </button>
 
-                <h3 className="font-semibold mb-2 truncate">
-                  {highlight(n.title || "Untitled", search)}
-                </h3>
+    {/* Selected count */}
+    <span className="ml-4 font-medium text-gray-700">
+      {selectedIds.size} selected
+    </span>
 
-                <p className="text-sm text-gray-700 line-clamp-3">
-                  {highlight(n.content || "", search)}
-                </p>
+    <div className="ml-auto flex items-center gap-3">
 
-                {n.labels?.length > 0 && (
-                  <div className="flex flex-wrap gap-1 mt-3">
-                    {n.labels.map((lbl, i) => (
-                      <span
-                        key={i}
-                        className="text-xs px-2 py-0.5 bg-emerald-50 border border-emerald-200 rounded-full"
-                      >
-                        {highlight(lbl, search)}
-                      </span>
-                    ))}
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-        </>
-      )}
-
-      {/* ---------- OTHER ARCHIVED ---------- */}
-      {otherArchived.length > 0 && (
-        <>
-          <p className="text-sm font-semibold text-emerald-700 mb-2">ARCHIVED</p>
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6">
-            {otherArchived.map((n) => (
-              <div
-                key={n._id}
-                onClick={() => openNote(n)}
-                className="relative rounded-xl p-5 border shadow-sm hover:shadow-md transition cursor-pointer"
-                style={{ backgroundColor: n.color || "#FFFFFF" }}
-              >
-                <button
-                  onClick={(e) => { e.stopPropagation(); togglePin(n); }}
-                  className="absolute top-3 right-3 scale-95 hover:scale-130 transition"
-                >
-                  <PinIcon active={n.isPinned} />
-                </button>
-
-                <h3 className="font-semibold mb-2 truncate">
-                  {highlight(n.title || "Untitled", search)}
-                </h3>
-
-                <p className="text-sm text-gray-700 line-clamp-3">
-                  {highlight(n.content || "", search)}
-                </p>
-
-                {n.labels?.length > 0 && (
-                  <div className="flex flex-wrap gap-1 mt-3">
-                    {n.labels.map((lbl, i) => (
-                      <span
-                        key={i}
-                        className="text-xs px-2 py-0.5 bg-emerald-50 border border-emerald-200 rounded-full"
-                      >
-                        {highlight(lbl, search)}
-                      </span>
-                    ))}
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-        </>
-      )}
-    </div>
-
-    {/* ---------- MODAL ---------- */}
-    {selectedNote && (
-      <div
-        onMouseDown={() => handleClose(true)}
-        className={`fixed inset-0 bg-black/50 flex items-center justify-center z-50 ${
-          isClosing ? "opacity-0 transition" : ""
-        }`}
-      >
-        <div
-          onMouseDown={(e) => e.stopPropagation()}
-          className={`bg-white w-[90%] max-w-2xl rounded-xl p-6 shadow-xl ${
-            isClosing ? "scale-95" : "scale-100"
-          } transition-all duration-200`}
-          style={{ backgroundColor: selectedNote.color || "#FFFFFF" }}
+      {/* Select all */}
+      {selectedIds.size !== pinnedArchived.length + otherArchived.length && (
+        <button
+          onClick={selectAllNotes}
+          className="px-3 py-1 border rounded"
         >
-          <div className="flex justify-between items-center mb-2">
-            <input
-              value={modalTitle}
-              onChange={(e) => handleTyping("title", e.target.value)}
-              className="w-full text-2xl font-semibold outline-none"
-            />
+          Select All
+        </button>
+      )}
 
-            <button
-              onClick={() => togglePin(selectedNote)}
-              className="scale-95 hover:scale-110 transition"
-            >
-              <PinIcon active={selectedNote.isPinned} />
-            </button>
-          </div>
+      {/* Deselect all */}
+      {selectedIds.size === pinnedArchived.length + otherArchived.length && (
+        <button
+          onClick={clearSelection}
+          className="px-3 py-1 border rounded"
+        >
+          Deselect All
+        </button>
+      )}
 
-          <textarea
-            value={modalContent}
-            onChange={(e) => handleTyping("content", e.target.value)}
-            className="w-full min-h-[220px] outline-none resize-none"
-          />
+      {/* Delete */}
+      <button
+        onClick={bulkDelete}
+        className="px-3 py-1 border rounded text-red-600"
+      >
+        Delete
+      </button>
+    </div>
+  </div>
+)}
 
-          {modalLabels.length > 0 && (
-            <div className="flex flex-wrap gap-2 mt-3 mb-2">
-              {modalLabels.map((lbl, i) => (
-                <span
-                  key={i}
-                  className="px-2 py-1 text-xs rounded-full bg-emerald-50 border border-emerald-200 flex items-center gap-1"
+      
+      <div className="max-w-6xl mx-auto">
+        <input
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search archived notes..."
+          className="w-full mb-8 px-4 py-3 rounded-lg bg-white border border-emerald-200 focus:ring-2 focus:ring-emerald-300"
+        />
+
+        {totalArchived > 0 &&
+          pinnedArchived.length === 0 &&
+          otherArchived.length === 0 && <NoSearchMatch />}
+
+        {/* ---------- PINNED ---------- */}
+        {pinnedArchived.length > 0 && (
+          <>
+            <p className="text-sm font-semibold text-emerald-700 mb-2">
+              PINNED
+            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6 mb-8">
+              {pinnedArchived.map((n) => (
+                <div
+  key={n._id}
+  onClick={() => {
+    if (selectionMode) return;
+    openNote(n);
+  }}
+  className={`
+    note-card group relative rounded-xl p-5
+    border
+    ${
+      selectedIds.has(n._id)
+        ? "border-emerald-600 ring-2 ring-emerald-300"
+        : "border-emerald-100 hover:border-emerald-300"
+    }
+    shadow-sm hover:shadow-md transition cursor-pointer
+  `}
+  style={{ backgroundColor: n.color || "#FFFFFF" }}
                 >
-                  {highlight(lbl, search)}
+                  {/* Hover circle */}
+<button
+  onClick={(e) => {
+    e.stopPropagation();
+    toggleSelect(n._id);
+  }}
+  className={`
+    absolute top-3 left-3 w-6 h-6 rounded-full 
+    border border-emerald-600 bg-white
+    flex items-center justify-center text-sm
+    opacity-0 group-hover:opacity-100
+    transition-opacity duration-200
+    ${selectedIds.has(n._id) ? "opacity-100" : ""}
+  `}
+>
+  {selectedIds.has(n._id) && "✔"}
+</button>
+
+
                   <button
-                    onClick={() =>
-                      setModalLabels(prev => prev.filter(l => l !== lbl))
-                    }
-                    className="text-emerald-600 hover:text-red-500"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      togglePin(n);
+                    }}
+                    className="absolute top-3 right-3 scale-95 hover:scale-130 transition"
                   >
-                    ✕
+                    <PinIcon active={n.isPinned} />
                   </button>
-                </span>
-              ))}
-            </div>
-          )}
 
-          <div className="flex items-center justify-between mt-3">
-            <div className="flex gap-5">
-              {["#FFFFFF","#FEF3C7","#FFEDD5","#DCFCE7","#E0F2FE","#FCE7F3"].map(c => (
-                <button
-                  key={c}
-                  onClick={() => setSelectedNote(n => ({ ...n, color: c }))}
-                  className="w-5 h-5 rounded-full border hover:scale-110 transition"
-                  style={{ backgroundColor: c }}
-                />
-              ))}
-            </div>
+                  <h3 className="font-semibold mb-2 truncate">
+                    {highlight(n.title || "Untitled", search)}
+                  </h3>
 
-            <div className="flex items-center gap-2">
+                  <p className="text-sm text-gray-700 line-clamp-3">
+                    {highlight(n.content || "", search)}
+                  </p>
 
-              {/* Undo */}
-              <button
-                onClick={handleUndo}
-                className="px-2 py-1 text-xl rounded transition-transform duration-150 hover:scale-155 "
-              >
-                ⟲
-              </button>
-
-              {/* Redo */}
-              <button
-                onClick={handleRedo}
-                className="px-2 py-1 text-xl rounded transition-transform duration-150 hover:scale-155"
-              >
-                ⟳
-              </button>
-
-              <div className="relative">
-                <button
-                  onClick={() => setMenuOpen(v => !v)}
-                  className="px-3 py-1 border rounded"
-                >
-                  ⋮
-                </button>
-
-                {menuOpen && (
-                  <div className="absolute bottom-12 right-0 bg-white border rounded shadow px-3 py-2 w-28">
-                    <button
-                      onClick={() => {
-                        setShowLabelEditor(true);
-                        setMenuOpen(false);
-                      }}
-                      className="block w-full text-left mb-1"
-                    >
-                      Edit Labels
-                    </button>
-
-                    <button onClick={unarchiveNote} className="block w-full text-left mb-1">
-                      Unarchive
-                    </button>
-
-                    <button
-                      onClick={deleteNote}
-                      className="block w-full text-left text-red-600"
-                    >
-                      Delete
-                    </button>
-                  </div>
-                )}
-
-                {showLabelEditor && (
-                  <div className="absolute bottom-16 right-0 bg-white/80 backdrop-blur-md border border-emerald-200 rounded-xl shadow-lg p-3 w-64">
-                    <p className="text-sm font-medium text-emerald-700 mb-2">
-                      Edit Labels
-                    </p>
-
-                    <div className="flex flex-wrap gap-2 mb-2">
-                      {modalLabels.map((lbl, i) => (
+                  {n.labels?.length > 0 && (
+                    <div className="flex flex-wrap gap-1 mt-3">
+                      {n.labels.map((lbl, i) => (
                         <span
                           key={i}
-                          className="px-2 py-1 text-xs rounded-full bg-emerald-50/80 border border-emerald-200 flex items-center gap-1"
+                          className="text-xs px-2 py-0.5 bg-emerald-50 border border-emerald-200 rounded-full"
                         >
-                          {lbl}
-                          <button
-                            onClick={() =>
-                              setModalLabels(prev => prev.filter(l => l !== lbl))
-                            }
-                            className="text-emerald-600 hover:text-red-500"
-                          >
-                            ✕
-                          </button>
+                          {highlight(lbl, search)}
                         </span>
                       ))}
                     </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </>
+        )}
 
-                    <div className="flex gap-2">
-                      <input
-                        value={labelInput}
-                        onChange={(e) => setLabelInput(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") {
-                            e.preventDefault();
+        {/* ---------- OTHER ARCHIVED ---------- */}
+        {otherArchived.length > 0 && (
+          <>
+            <p className="text-sm font-semibold text-emerald-700 mb-2">
+              ARCHIVED
+            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6">
+              {otherArchived.map((n) => (
+  <div
+    key={n._id}
+    onClick={() => {
+      if (selectionMode) return;
+      openNote(n);
+    }}
+    className={`
+      note-card group relative rounded-xl p-5
+      border
+      ${
+        selectedIds.has(n._id)
+          ? "border-emerald-600 ring-2 ring-emerald-300"
+          : "border-emerald-100 hover:border-emerald-300"
+      }
+      shadow-sm hover:shadow-md transition cursor-pointer
+    `}
+    style={{ backgroundColor: n.color || "#FFFFFF" }}
+                >
+                  {/* Hover circle */}
+<button
+  onClick={(e) => {
+    e.stopPropagation();
+    toggleSelect(n._id);
+  }}
+  className={`
+    absolute top-3 left-3 w-6 h-6 rounded-full 
+    border border-emerald-600 bg-white
+    flex items-center justify-center text-sm
+    opacity-0 group-hover:opacity-100
+    transition-opacity duration-200
+    ${selectedIds.has(n._id) ? "opacity-100" : ""}
+  `}
+>
+  {selectedIds.has(n._id) && "✔"}
+</button>
+
+
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      togglePin(n);
+                    }}
+                    className="absolute top-3 right-3 scale-95 hover:scale-130 transition"
+                  >
+                    <PinIcon active={n.isPinned} />
+                  </button>
+
+                  <h3 className="font-semibold mb-2 truncate">
+                    {highlight(n.title || "Untitled", search)}
+                  </h3>
+
+                  <p className="text-sm text-gray-700 line-clamp-3">
+                    {highlight(n.content || "", search)}
+                  </p>
+
+                  {n.labels?.length > 0 && (
+                    <div className="flex flex-wrap gap-1 mt-3">
+                      {n.labels.map((lbl, i) => (
+                        <span
+                          key={i}
+                          className="text-xs px-2 py-0.5 bg-emerald-50 border border-emerald-200 rounded-full"
+                        >
+                          {highlight(lbl, search)}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+      </div>
+
+      {/* ---------- MODAL ---------- */}
+      {selectedNote && (
+        <div
+          onMouseDown={() => handleClose(true)}
+          className={`fixed inset-0 bg-black/50 flex items-center justify-center z-50 ${
+            isClosing ? "opacity-0 transition" : ""
+          }`}
+        >
+          <div
+            onMouseDown={(e) => e.stopPropagation()}
+            className={`bg-white w-[90%] max-w-2xl rounded-xl p-6 shadow-xl ${
+              isClosing ? "scale-95" : "scale-100"
+            } transition-all duration-200`}
+            style={{ backgroundColor: selectedNote.color || "#FFFFFF" }}
+          >
+            <div className="flex justify-between items-center mb-2">
+              <input
+                value={modalTitle}
+                onChange={(e) => handleTyping("title", e.target.value)}
+                className="w-full text-2xl font-semibold outline-none"
+              />
+
+              <button
+                onClick={() => togglePin(selectedNote)}
+                className="scale-95 hover:scale-110 transition"
+              >
+                <PinIcon active={selectedNote.isPinned} />
+              </button>
+            </div>
+
+            <textarea
+              value={modalContent}
+              onChange={(e) => handleTyping("content", e.target.value)}
+              className="w-full min-h-[220px] outline-none resize-none"
+            />
+
+            {modalLabels.length > 0 && (
+              <div className="flex flex-wrap gap-2 mt-3 mb-2">
+                {modalLabels.map((lbl, i) => (
+                  <span
+                    key={i}
+                    className="px-2 py-1 text-xs rounded-full bg-emerald-50 border border-emerald-200 flex items-center gap-1"
+                  >
+                    {highlight(lbl, search)}
+                    <button
+                      onClick={() =>
+                        setModalLabels((prev) => prev.filter((l) => l !== lbl))
+                      }
+                      className="text-emerald-600 hover:text-red-500"
+                    >
+                      ✕
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
+
+            <div className="flex items-center justify-between mt-3">
+              <div className="flex gap-5">
+                {[
+                  "#FFFFFF",
+                  "#FEF3C7",
+                  "#FFEDD5",
+                  "#DCFCE7",
+                  "#E0F2FE",
+                  "#FCE7F3",
+                ].map((c) => (
+                  <button
+                    key={c}
+                    onClick={() => setSelectedNote((n) => ({ ...n, color: c }))}
+                    className="w-5 h-5 rounded-full border hover:scale-110 transition"
+                    style={{ backgroundColor: c }}
+                  />
+                ))}
+              </div>
+
+              <div className="flex items-center gap-2">
+                {/* Undo */}
+                <button
+                  onClick={handleUndo}
+                  className="px-2 py-1 text-xl rounded transition-transform duration-150 hover:scale-155 "
+                >
+                  ⟲
+                </button>
+
+                {/* Redo */}
+                <button
+                  onClick={handleRedo}
+                  className="px-2 py-1 text-xl rounded transition-transform duration-150 hover:scale-155"
+                >
+                  ⟳
+                </button>
+
+                <div className="relative">
+                  <button
+                    onClick={() => setMenuOpen((v) => !v)}
+                    className="px-3 py-1 border rounded"
+                  >
+                    ⋮
+                  </button>
+
+                  {menuOpen && (
+                    <div className="absolute bottom-12 right-0 bg-white border rounded shadow px-3 py-2 w-28">
+                      <button
+                        onClick={() => {
+                          setShowLabelEditor(true);
+                          setMenuOpen(false);
+                        }}
+                        className="block w-full text-left mb-1"
+                      >
+                        Edit Labels
+                      </button>
+
+                      <button
+                        onClick={unarchiveNote}
+                        className="block w-full text-left mb-1"
+                      >
+                        Unarchive
+                      </button>
+
+                      <button
+                        onClick={deleteNote}
+                        className="block w-full text-left text-red-600"
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  )}
+
+                  {showLabelEditor && (
+                    <div className="absolute bottom-16 right-0 bg-white/80 backdrop-blur-md border border-emerald-200 rounded-xl shadow-lg p-3 w-64">
+                      <p className="text-sm font-medium text-emerald-700 mb-2">
+                        Edit Labels
+                      </p>
+
+                      <div className="flex flex-wrap gap-2 mb-2">
+                        {modalLabels.map((lbl, i) => (
+                          <span
+                            key={i}
+                            className="px-2 py-1 text-xs rounded-full bg-emerald-50/80 border border-emerald-200 flex items-center gap-1"
+                          >
+                            {lbl}
+                            <button
+                              onClick={() =>
+                                setModalLabels((prev) =>
+                                  prev.filter((l) => l !== lbl)
+                                )
+                              }
+                              className="text-emerald-600 hover:text-red-500"
+                            >
+                              ✕
+                            </button>
+                          </span>
+                        ))}
+                      </div>
+
+                      <div className="flex gap-2">
+                        <input
+                          value={labelInput}
+                          onChange={(e) => setLabelInput(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") {
+                              e.preventDefault();
+                              const v = labelInput.trim();
+                              if (v && !modalLabels.includes(v)) {
+                                setModalLabels((prev) => [...prev, v]);
+                              }
+                              setLabelInput("");
+                              setShowLabelEditor(false);
+                            }
+                          }}
+                          placeholder="Add label"
+                          className="flex-1 px-2 py-1 text-xs rounded-lg border border-emerald-300 bg-white/70"
+                        />
+
+                        <button
+                          onClick={() => {
                             const v = labelInput.trim();
                             if (v && !modalLabels.includes(v)) {
-                              setModalLabels(prev => [...prev, v]);
+                              setModalLabels((prev) => [...prev, v]);
                             }
                             setLabelInput("");
                             setShowLabelEditor(false);
-                          }
-                        }}
-                        placeholder="Add label"
-                        className="flex-1 px-2 py-1 text-xs rounded-lg border border-emerald-300 bg-white/70"
-                      />
-
-                      <button
-                        onClick={() => {
-                          const v = labelInput.trim();
-                          if (v && !modalLabels.includes(v)) {
-                            setModalLabels(prev => [...prev, v]);
-                          }
-                          setLabelInput("");
-                          setShowLabelEditor(false);
-                        }}
-                        className="px-2 py-1 text-xs rounded-lg bg-emerald-600/80 text-white hover:bg-emerald-600"
-                      >
-                        Add
-                      </button>
+                          }}
+                          className="px-2 py-1 text-xs rounded-lg bg-emerald-600/80 text-white hover:bg-emerald-600"
+                        >
+                          Add
+                        </button>
+                      </div>
                     </div>
-                  </div>
-                )}
+                  )}
+                </div>
               </div>
             </div>
           </div>
-
         </div>
-      </div>
-    )}
-  </div>
-);
-
+      )}
+    </div>
+  );
 }
 
 export default ArchivedNotes;

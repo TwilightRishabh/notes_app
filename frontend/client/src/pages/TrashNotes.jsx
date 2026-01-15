@@ -9,6 +9,12 @@ function TrashNotes() {
   const [search, setSearch] = useState("");
   const [isLoading, setIsLoading] = useState(true);
 
+
+  // ⭐ Bulk selection state
+const [selectedIds, setSelectedIds] = useState(new Set());
+const [selectionMode, setSelectionMode] = useState(false);
+
+
   const navigate = useNavigate();
 
   /* ---------- FETCH TRASH NOTES ---------- */
@@ -33,6 +39,29 @@ function TrashNotes() {
   useEffect(() => {
     fetchNotes();
   }, []);
+
+
+
+  // ⭐ Deselect when clicking outside notes (Google Keep behavior)
+useEffect(() => {
+  if (!selectionMode) return;
+
+  const handleOutsideMouseDown = (e) => {
+    const clickedNote = e.target.closest(".note-card");
+    const clickedBar = e.target.closest(".bulk-bar");
+
+    if (!clickedNote && !clickedBar) {
+      clearSelection();
+    }
+  };
+
+  document.addEventListener("mousedown", handleOutsideMouseDown);
+
+  return () => {
+    document.removeEventListener("mousedown", handleOutsideMouseDown);
+  };
+}, [selectionMode]);
+
 
   /* ---------- AUTO-DELETE AFTER 30 DAYS ---------- */
   const daysLeftToDelete = (deletedAt) => {
@@ -74,6 +103,8 @@ function TrashNotes() {
       : notes;
   }, [notes, search]);
 
+  
+
   /* ---------- RESTORE (⭐ keep color, pin, archive flags) ---------- */
   const restoreNote = async (note) => {
     const token = localStorage.getItem("token");
@@ -103,6 +134,42 @@ function TrashNotes() {
     setNotes(prev => prev.filter(n => n._id !== note._id));
   };
 
+
+  // ⭐ Bulk Restore
+const bulkRestore = async () => {
+  const token = localStorage.getItem("token");
+
+  await Promise.all(
+    [...selectedIds].map((id) =>
+      axios.put(
+        `http://localhost:5000/api/notes/${id}`,
+        { isDeleted: false },
+        { headers: { Authorization: `Bearer ${token}` } }
+      )
+    )
+  );
+
+  setNotes((prev) => prev.filter((n) => !selectedIds.has(n._id)));
+  clearSelection();
+};
+
+// ⭐ Bulk Delete Forever
+const bulkDeleteForever = async () => {
+  const token = localStorage.getItem("token");
+
+  await Promise.all(
+    [...selectedIds].map((id) =>
+      axios.delete(`http://localhost:5000/api/notes/${id}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+    )
+  );
+
+  setNotes((prev) => prev.filter((n) => !selectedIds.has(n._id)));
+  clearSelection();
+};
+
+  
   /* ---------- EMPTY TRASH ---------- */
   const emptyTrash = async () => {
     if (!window.confirm("Delete all notes permanently? This cannot be undone."))
@@ -132,6 +199,32 @@ function TrashNotes() {
     </div>
   );
 
+
+  // ⭐ Selection helpers
+const toggleSelect = (id) => {
+  setSelectedIds((prev) => {
+    const next = new Set(prev);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+
+    setSelectionMode(next.size > 0);
+    return next;
+  });
+};
+
+const clearSelection = () => {
+  setSelectedIds(new Set());
+  setSelectionMode(false);
+};
+
+const selectAllNotes = () => {
+  const visibleNotes = filteredNotes;
+  const allIds = new Set(visibleNotes.map((n) => n._id));
+  setSelectedIds(allIds);
+  setSelectionMode(true);
+};
+
+
   if (isLoading)
     return (
       <div className="min-h-screen bg-emerald-50 flex items-center justify-center">
@@ -141,6 +234,57 @@ function TrashNotes() {
 
   return (
     <div className="min-h-screen bg-emerald-50 px-6 py-8">
+
+      {/* ⭐ Bulk Action Bar */}
+{selectionMode && (
+  <div className="bulk-bar fixed top-16 left-0 right-0 h-14 bg-white shadow-md flex items-center px-6 z-50">
+
+    {/* Cancel */}
+    <button onClick={clearSelection} className="text-xl">
+      ❌
+    </button>
+
+    {/* Selected count */}
+    <span className="ml-4 font-medium text-gray-700">
+      {selectedIds.size} selected
+    </span>
+
+    <div className="ml-auto flex items-center gap-3">
+
+      {/* Select all */}
+      {selectedIds.size !== filteredNotes.length && (
+        <button onClick={selectAllNotes} className="px-3 py-1 border rounded">
+          Select All
+        </button>
+      )}
+
+      {/* Deselect all */}
+      {selectedIds.size === filteredNotes.length && (
+        <button onClick={clearSelection} className="px-3 py-1 border rounded">
+          Deselect All
+        </button>
+      )}
+
+      {/* Restore */}
+      <button
+        onClick={bulkRestore}
+        className="px-3 py-1 border rounded text-emerald-600"
+      >
+        Restore
+      </button>
+
+      {/* Delete */}
+      <button
+        onClick={bulkDeleteForever}
+        className="px-3 py-1 border rounded text-red-600"
+      >
+        Delete Forever
+      </button>
+    </div>
+  </div>
+)}
+
+      
       <div className="max-w-6xl mx-auto">
 
         <input
@@ -165,15 +309,43 @@ function TrashNotes() {
 
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6">
           {filteredNotes.map(n => (
-            <div
-              key={n._id}
-              className="
-                relative rounded-xl p-5
-                border border-emerald-100
-                shadow-sm
-              "
-              style={{ backgroundColor: n.color || "#FFFFFF" }}  // ⭐ show color
+  <div
+    key={n._id}
+    onClick={() => {
+      if (selectionMode) return;
+    }}
+    className={`
+      note-card group relative rounded-xl p-5
+      border
+      ${
+        selectedIds.has(n._id)
+          ? "border-emerald-600 ring-2 ring-emerald-300"
+          : "border-emerald-100 hover:border-emerald-300"
+      }
+      shadow-sm transition cursor-pointer
+    `}
+    style={{ backgroundColor: n.color || "#FFFFFF" }}
             >
+              
+              {/* Hover circle */}
+<button
+  onClick={(e) => {
+    e.stopPropagation();
+    toggleSelect(n._id);
+  }}
+  className={`
+    absolute top-3 left-3 w-6 h-6 rounded-full 
+    border border-emerald-600 bg-white
+    flex items-center justify-center text-sm
+    opacity-0 group-hover:opacity-100
+    transition-opacity duration-200
+    ${selectedIds.has(n._id) ? "opacity-100" : ""}
+  `}
+>
+  {selectedIds.has(n._id) && "✔"}
+</button>
+
+
               <h3 className="font-semibold mb-1 truncate">
                 {n.title || "Untitled"}
               </h3>
