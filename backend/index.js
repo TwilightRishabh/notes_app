@@ -14,10 +14,7 @@ dotenv.config();
 const app = express();
 
 app.use(cors({
-  origin: [
-    "http://localhost:5173",
-    "https://jotter-seven.vercel.app"
-  ],
+  origin: "*",
   credentials: true
 }));
 
