@@ -64,7 +64,12 @@ function NotesDashboard() {
 } = useNoteModal({
   onSave: async ({ selectedNote, title, content, labels }) => {
     if (!selectedNote?._id) {
-      await addNote({ title, content, labels, color: "#FFFFFF" });
+      await addNote({
+  title,
+  content,
+  labels,
+  color: selectedNote?.color || "#FFFFFF",
+});
       return;
     }
 
@@ -158,7 +163,7 @@ function NotesDashboard() {
   // ⭐ SEARCH (title + content + labels)
   const { pinnedNotes, otherNotes } = useMemo(() => {
     const q = search.trim().toLowerCase();
-    const visible = notes.filter((n) => !n.isArchived);
+    const visible = notes.filter((n) => !n.isArchived && !n.isDeleted);
 
     const filtered = q
       ? visible.filter((n) => {
@@ -179,9 +184,9 @@ function NotesDashboard() {
 
   // ⭐ Bulk delete
   const bulkDelete = async () => {
-    await bulkRemove(selectedIds);
-    clearSelection();
-  };
+  await bulkRemove([...selectedIds]);
+  clearSelection();
+};
 
   // ⭐ Toggle pin
   const togglePin = async (note) => {

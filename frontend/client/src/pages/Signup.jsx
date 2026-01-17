@@ -36,7 +36,7 @@ function Signup() {
         JSON.stringify({ id, fullName, email })
       );
 
-      navigate("/notes");
+      navigate("/");
     } catch (err) {
       console.error(err.response?.data || err.message);
       alert(err.response?.data?.message || "Signup failed");

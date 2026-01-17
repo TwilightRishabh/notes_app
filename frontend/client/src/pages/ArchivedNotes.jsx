@@ -168,10 +168,10 @@ const archivedNotes = notes.filter((n) => n.isArchived);
   // ---------------- TEMP SAFE FUNCTIONS (Phase 1) ----------------
   // Only to prevent crash. Real logic comes in Phase 2.
 
-  const bulkDelete = async () => {
-    await bulkRemove(selectedIds);
-    clearSelection();
-  };
+ const bulkDelete = async () => {
+  await bulkRemove([...selectedIds]);
+  clearSelection();
+};
 
   const togglePin = async (note) => {
     if (!note?._id) return;
@@ -213,6 +213,7 @@ const archivedNotes = notes.filter((n) => n.isArchived);
 
   const NoSearchMatch = () => (
     <div className="flex flex-col items-center justify-center h-[40vh] text-gray-600">
+      
       <svg width="72" height="72" viewBox="0 0 24 24" className="mb-3">
         <rect
           x="3"
@@ -239,6 +240,31 @@ const archivedNotes = notes.filter((n) => n.isArchived);
     </div>
   );
 
+    const EmptyArchived = () => (
+    <div className="flex flex-col items-center justify-center h-[55vh] text-gray-600">
+      <svg width="72" height="72" viewBox="0 0 24 24" className="mb-3">
+        <path
+          d="M4 4h16v4H4V4zm0 6h16v10H4V10z"
+          fill="none"
+          stroke="#6b7280"
+          strokeWidth="2"
+        />
+        <path
+          d="M8 14h8"
+          stroke="#6b7280"
+          strokeWidth="2"
+          strokeLinecap="round"
+        />
+      </svg>
+
+      <p className="font-medium text-lg">No Archived Notes Yet</p>
+      <p className="text-sm opacity-70">
+        Archive notes to keep them for later
+      </p>
+    </div>
+  );
+
+
   return (
     <div className="min-h-screen bg-emerald-50 px-6 py-8">
       {/* ⭐ Bulk Action Bar */}
@@ -260,10 +286,12 @@ const archivedNotes = notes.filter((n) => n.isArchived);
           placeholder="Search archived notes..."
         />
 
+        {totalArchived === 0 && <EmptyArchived />}
+
+        {/* Search but no match */}
         {totalArchived > 0 &&
           pinnedArchived.length === 0 &&
           otherArchived.length === 0 && <NoSearchMatch />}
-
         {/* ---------- PINNED ---------- */}
         <NotesSection
   title="PINNED"

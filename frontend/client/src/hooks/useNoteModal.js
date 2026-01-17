@@ -15,12 +15,30 @@ export default function useNoteModal({ onSave, onDelete, onToggleArchive }) {
   const undoStack = useRef([]);
   const redoStack = useRef([]);
   const typingTimer = useRef(null);
+  const cleanupModal = () => {
+  setSelectedNote(null);
+  setModalTitle("");
+  setModalContent("");
+  setModalLabels([]);
+  setLabelInput("");
+  setMenuOpen(false);
+  setShowLabelEditor(false);
+  setIsClosing(false);
+};
   const lastSnapshot = useRef({ title: "", content: "" });
 
   // Lock scroll
-  useEffect(() => {
-    document.body.style.overflow = selectedNote ? "hidden" : "auto";
-  }, [selectedNote]);
+useEffect(() => {
+  if (selectedNote) {
+    document.body.style.overflow = "hidden";
+  } else {
+    document.body.style.overflow = "auto";
+  }
+
+  return () => {
+    document.body.style.overflow = "auto";
+  };
+}, [selectedNote]);
 
   // ESC close
   useEffect(() => {
@@ -97,63 +115,71 @@ export default function useNoteModal({ onSave, onDelete, onToggleArchive }) {
     }, 700);
   };
 
-  const handleClose = async (clickedOutside = false) => {
-    if (isClosing) return;
-    setIsClosing(true);
+const handleClose = async (withAnimation = false) => {
+  if (isClosing) return;
+  setIsClosing(true);
 
+  try {
     await onSave({
       selectedNote,
       title: modalTitle,
       content: modalContent,
       labels: modalLabels,
     });
+  } catch (err) {
+    console.warn("Note save skipped:", err.message || err);
+  }
 
+  if (withAnimation) {
     setTimeout(() => {
-      setIsClosing(false);
-      setMenuOpen(false);
-      setShowLabelEditor(false);
-      setSelectedNote(null);
+      cleanupModal();
     }, 180);
-  };
+  } else {
+    cleanupModal();
+  }
+};
 
-  const deleteCurrentNote = async () => {
-    if (!selectedNote?._id) return;
-    await onDelete(selectedNote);
-    setSelectedNote(null);
-    setMenuOpen(false);
-  };
 
-  const toggleArchive = async () => {
-    if (!selectedNote?._id) return;
-    await onToggleArchive(selectedNote, modalLabels);
-    setSelectedNote(null);
-    setMenuOpen(false);
-  };
 
-  return {
-    selectedNote,
-    setSelectedNote,
-    modalTitle,
-    modalContent,
-    modalLabels,
-    labelInput,
-    menuOpen,
-    showLabelEditor,
-    isClosing,
+const deleteCurrentNote = async () => {
+  if (!selectedNote?._id) return;
+  await onDelete(selectedNote);
+  cleanupModal();
+};
 
-    setModalTitle,
-    setModalContent,
-    setModalLabels,
-    setLabelInput,
-    setMenuOpen,
-    setShowLabelEditor,
+const toggleArchive = async () => {
+  if (!selectedNote?._id) return;
+  await onToggleArchive(selectedNote, modalLabels);
+  cleanupModal();
+};
 
-    openNote,
-    handleTyping,
-    handleUndo,
-    handleRedo,
-    handleClose,
-    deleteCurrentNote,
-    toggleArchive,
-  };
+
+  
+ return {
+  selectedNote,
+  setSelectedNote,
+  modalTitle,
+  modalContent,
+  modalLabels,
+  labelInput,
+  menuOpen,
+  showLabelEditor,
+  isClosing,
+
+  setModalTitle,
+  setModalContent,
+  setModalLabels,
+  setLabelInput,
+  setMenuOpen,
+  setShowLabelEditor,
+
+  openNote,
+  handleTyping,
+  handleUndo,
+  handleRedo,
+  handleClose,
+  deleteCurrentNote,
+  toggleArchive,
+};
+
 }

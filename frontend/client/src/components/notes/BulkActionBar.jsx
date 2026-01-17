@@ -4,9 +4,11 @@ export default function BulkActionBar({
   onClear,
   onSelectAll,
   onDelete,
+  onRestore,
 }) {
   return (
     <div className="bulk-bar fixed top-16 left-0 right-0 h-14 bg-white shadow-md flex items-center px-6 z-50">
+
       {/* Cancel */}
       <button onClick={onClear} className="text-xl">
         ❌
@@ -19,6 +21,7 @@ export default function BulkActionBar({
 
       {/* Right side */}
       <div className="ml-auto flex items-center gap-3">
+
         {/* Select all */}
         {selectedCount !== totalCount && (
           <button
@@ -39,13 +42,25 @@ export default function BulkActionBar({
           </button>
         )}
 
+        {/* Restore (Trash only) */}
+        {onRestore && (
+          <button
+            onClick={onRestore}
+            className="px-3 py-1 border rounded text-emerald-600"
+          >
+            Restore
+          </button>
+        )}
+
         {/* Delete */}
-        <button
-          onClick={onDelete}
-          className="px-3 py-1 border rounded text-red-600"
-        >
-          Delete
-        </button>
+        {onDelete && (
+          <button
+            onClick={onDelete}
+            className="px-3 py-1 border rounded text-red-600"
+          >
+            Delete
+          </button>
+        )}
       </div>
     </div>
   );
