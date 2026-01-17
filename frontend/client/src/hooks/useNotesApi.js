@@ -1,6 +1,7 @@
 import axios from "axios";
 
-const API = "http://localhost:5000/api/notes";
+const API = "https://jotter-backend-l0ki.onrender.com/api/notes";
+
 
 export function useNotesApi() {
   const token = localStorage.getItem("token");
