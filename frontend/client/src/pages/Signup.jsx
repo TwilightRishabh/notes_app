@@ -23,10 +23,9 @@ function Signup() {
 
     try {
       const res = await axios.post(
-        "http://localhost:5000/api/users/register",
-        formData
-      );
-
+  "https://jotter-backend-l0ki.onrender.com/api/users/register",
+  formData
+);
       // backend sends: id, fullName, email, token
       const { token, id, fullName, email } = res.data;
 
