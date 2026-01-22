@@ -1,7 +1,7 @@
 // src/pages/Home.jsx
 import React from "react";
 import { Link } from "react-router-dom";
-import JotterLogo from "../components/branding/jotterLogo";
+import JotterLogo from "../components/branding/JotterLogo";
 
 function Home() {
   const token = localStorage.getItem("token");

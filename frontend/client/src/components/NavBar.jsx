@@ -1,6 +1,6 @@
 import React from "react";
 import { Link, useNavigate, useLocation } from "react-router-dom";
-import JotterLogo from "./branding/jotterLogo";
+import JotterLogo from "../";
 
 
 
