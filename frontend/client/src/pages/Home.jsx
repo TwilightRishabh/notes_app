@@ -5,6 +5,7 @@ import JotterLogo from "../components/branding/JotterLogo.jsx";
 
 
 
+
 function Home() {
   const token = localStorage.getItem("token");
 
