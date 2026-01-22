@@ -1,7 +1,8 @@
 // src/pages/Home.jsx
 import React from "react";
 import { Link } from "react-router-dom";
-import JotterLogo from "../components/branding/JotterLogo";
+import JotterLogo from "../components/branding/JotterLogo.jsx";
+
 
 function Home() {
   const token = localStorage.getItem("token");
@@ -9,21 +10,18 @@ function Home() {
   return (
     <div className="min-h-[calc(100vh-64px)] flex items-center justify-center bg-green-100 px-6">
       <div className="max-w-3xl w-full text-center">
-
         {/* Logo + Brand */}
         <div className="flex flex-col items-center mb-6">
           {/* Jotter Logo SVG */}
           <JotterLogo size={60} />
 
-          <h1 className="text-4xl font-bold text-gray-900">
-            Jotter
-          </h1>
+          <h1 className="text-4xl font-bold text-gray-900">Jotter</h1>
         </div>
 
         {/* Tagline */}
         <p className="text-gray-600 text-lg max-w-xl mx-auto mb-10">
-          A calm, focused space to capture thoughts, ideas, and notes —
-          without distractions.
+          A calm, focused space to capture thoughts, ideas, and notes — without
+          distractions.
         </p>
 
         {/* CTA Section */}
