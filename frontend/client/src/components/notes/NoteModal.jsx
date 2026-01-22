@@ -34,12 +34,25 @@ function NoteModal({
       }`}
     >
       <div
-        onMouseDown={(e) => e.stopPropagation()}
-        className={`w-[90%] max-w-2xl rounded-xl p-6 shadow-xl ${
-          isClosing ? "scale-95" : "scale-100"
-        } transition-all duration-200`}
-        style={{ backgroundColor: selectedNote.color || "#FFFFFF" }}
-      >
+  onMouseDown={(e) => e.stopPropagation()}
+  className={`relative w-[90%] max-w-2xl rounded-xl p-6 shadow-xl ${
+    isClosing ? "scale-95" : "scale-100"
+  } transition-all duration-200`}
+  style={{ backgroundColor: selectedNote.color || "#FFFFFF" }}
+>
+
+
+{/* Floating Close Button */}
+<button
+  onClick={() => handleClose(false)}
+  className="absolute top-3 right-5 text-xl px-2 py-1 rounded 
+             hover:text-red-800  transition text-black"
+  title="Close"
+>
+  Close
+</button>
+
+
         {/* Title */}
         <input
           value={modalTitle}
