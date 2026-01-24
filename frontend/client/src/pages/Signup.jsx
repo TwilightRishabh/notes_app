@@ -4,6 +4,8 @@ import { useNavigate, Link } from "react-router-dom";
 
 function Signup() {
   const navigate = useNavigate();
+  const [loading, setLoading] = useState(false);
+
 
   const [formData, setFormData] = useState({
     fullName: "",
@@ -11,36 +13,43 @@ function Signup() {
     password: "",
   });
 
+  
+
   const handleChange = (e) => {
     setFormData({
       ...formData,
       [e.target.name]: e.target.value, // VERY IMPORTANT
     });
   };
+const handleSubmit = async (e) => {
+  e.preventDefault();
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
+  if (loading) return; // 🔒 block multiple clicks
+  setLoading(true);
 
-    try {
-      const res = await axios.post(
-  "https://jotter-backend-l0ki.onrender.com/api/users/register",
-  formData
-);
-      // backend sends: id, fullName, email, token
-      const { token, id, fullName, email } = res.data;
+  try {
+    const res = await axios.post(
+      "https://jotter-backend-l0ki.onrender.com/api/users/register",
+      formData
+    );
 
-      localStorage.setItem("token", token);
-      localStorage.setItem(
-        "user",
-        JSON.stringify({ id, fullName, email })
-      );
+    const { token, id, fullName, email } = res.data;
 
-      navigate("/");
-    } catch (err) {
-      console.error(err.response?.data || err.message);
-      alert(err.response?.data?.message || "Signup failed");
-    }
-  };
+    localStorage.setItem("token", token);
+    localStorage.setItem(
+      "user",
+      JSON.stringify({ id, fullName, email })
+    );
+
+    navigate("/");
+  } catch (err) {
+    console.error(err.response?.data || err.message);
+    alert(err.response?.data?.message || "Signup failed");
+  } finally {
+    setLoading(false); // ✅ always reset
+  }
+};
+
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-100">
@@ -54,6 +63,7 @@ function Signup() {
             placeholder="Full Name"
             value={formData.fullName}
             onChange={handleChange}
+            disabled={loading}
             className="w-full px-4 py-2 border rounded"
             required
           />
@@ -64,6 +74,7 @@ function Signup() {
             placeholder="Email"
             value={formData.email}
             onChange={handleChange}
+            disabled={loading}
             className="w-full px-4 py-2 border rounded"
             required
           />
@@ -76,14 +87,23 @@ function Signup() {
             onChange={handleChange}
             className="w-full px-4 py-2 border rounded"
             required
+            minLength={6}
           />
 
           <button
-            type="submit"
-            className="w-full bg-green-600 text-white py-2 rounded hover:bg-green-700"
-          >
-            Signup
-          </button>
+  type="submit"
+  disabled={loading}
+  className={`w-full py-2 rounded text-white transition
+    ${
+      loading
+        ? "bg-green-400 cursor-not-allowed"
+        : "bg-green-600 hover:bg-green-700"
+    }
+  `}
+>
+  {loading ? "Creating account..." : "Signup"}
+</button>
+
         </form>
 
         <p className="mt-4 text-center text-sm">

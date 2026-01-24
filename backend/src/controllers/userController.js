@@ -2,13 +2,23 @@ import User from "../models/User.js";
 import { generateToken } from "../utils/generateToken.js";
 
 // Register User
+// Register User
 export const registerUser = async (req, res) => {
   try {
     const { fullName, email, password } = req.body;
 
     // basic validation
     if (!fullName || !email || !password) {
-      return res.status(400).json({ message: "Please provide name, email and password" });
+      return res
+        .status(400)
+        .json({ message: "Please provide name, email and password" });
+    }
+
+    // 🔒 password length validation
+    if (password.length < 6) {
+      return res
+        .status(400)
+        .json({ message: "Password must be at least 6 characters long" });
     }
 
     // check duplicate
@@ -29,9 +39,10 @@ export const registerUser = async (req, res) => {
     });
   } catch (error) {
     console.error("Register error:", error);
-    res.status(500).json({ message: "Server error", error: error.message });
+    res.status(500).json({ message: "Server error" });
   }
 };
+
 
 // Login User
 export const loginUser = async (req, res) => {

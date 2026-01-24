@@ -7,26 +7,33 @@ const Login = () => {
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-
-  const handleLogin = async (e) => {
-    e.preventDefault();
-
-    try {
-      const res = await axios.post(
-  "https://jotter-backend-l0ki.onrender.com/api/users/login",
-  { email, password }
-);
+  const [loading, setLoading] = useState(false);
 
 
-      // save token
-      localStorage.setItem("token", res.data.token);
+const handleLogin = async (e) => {
+  e.preventDefault();
 
-      // redirect to notes
-      navigate("/notes");
-    } catch (error) {
-      alert(error.response?.data?.message || "Login failed");
-    }
-  };
+  if (loading) return; // 🔒 block multiple clicks
+  setLoading(true);
+
+  try {
+    const res = await axios.post(
+      "https://jotter-backend-l0ki.onrender.com/api/users/login",
+      { email, password }
+    );
+
+    // save token
+    localStorage.setItem("token", res.data.token);
+
+    // redirect to notes
+    navigate("/notes");
+  } catch (error) {
+    alert(error.response?.data?.message || "Login failed");
+  } finally {
+    setLoading(false); // ✅ ALWAYS reset
+  }
+};
+
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-100">
@@ -38,6 +45,7 @@ const Login = () => {
             type="email"
             placeholder="Email"
             value={email}
+            disabled={loading}
             onChange={(e) => setEmail(e.target.value)}
             className="w-full px-4 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-green-500"
             required
@@ -47,17 +55,26 @@ const Login = () => {
             type="password"
             placeholder="Password"
             value={password}
+            disabled={loading}
             onChange={(e) => setPassword(e.target.value)}
             className="w-full px-4 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-green-500"
             required
           />
 
           <button
-            type="submit"
-            className="w-full bg-green-600 text-white py-2 rounded-md hover:bg-green-700 transition"
-          >
-            Login
-          </button>
+  type="submit"
+  disabled={loading}
+  className={`w-full py-2 rounded-md text-white transition
+    ${
+      loading
+        ? "bg-green-400 cursor-not-allowed"
+        : "bg-green-600 hover:bg-green-700"
+    }
+  `}
+>
+  {loading ? "Logging in..." : "Login"}
+</button>
+
         </form>
 
         {/* signup redirect */}
